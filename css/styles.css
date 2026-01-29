@@ -156,8 +156,24 @@ canvas {
     height: 16px;
 }
 
-.tool-btn[data-expandable].expanded {
+.tool-btn[data-expandable] {
     position: relative;
+}
+
+/* Small indicator showing more options available */
+.tool-btn[data-expandable]::before {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    right: 3px;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-bottom: 4px solid #666;
+}
+
+.tool-btn[data-expandable].active::before {
+    border-bottom-color: rgba(255, 255, 255, 0.7);
 }
 
 .tool-btn[data-expandable].expanded::after {
