@@ -36,6 +36,11 @@ const Tools = {
 
     // Shape drawing state
     shapeStart: null,
+    shiftHeld: false,
+
+    // Right-click pan state
+    isRightClickPanning: false,
+    rightClickPanStart: null,
 
     /**
      * Initialize tools
@@ -210,6 +215,50 @@ const Tools = {
             const newScale = Canvas.scale * zoomFactor;
             Canvas.setScale(newScale, e.clientX, e.clientY);
         }, { passive: false });
+
+        // Right-click pan
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 2) {
+                e.preventDefault();
+                this.isRightClickPanning = true;
+                this.rightClickPanStart = { x: e.clientX, y: e.clientY };
+                canvas.classList.add('cursor-panning');
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (this.isRightClickPanning && this.rightClickPanStart) {
+                const dx = e.clientX - this.rightClickPanStart.x;
+                const dy = e.clientY - this.rightClickPanStart.y;
+                Canvas.pan(dx, dy);
+                this.rightClickPanStart = { x: e.clientX, y: e.clientY };
+            }
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (e.button === 2 && this.isRightClickPanning) {
+                this.isRightClickPanning = false;
+                this.rightClickPanStart = null;
+                canvas.classList.remove('cursor-panning');
+            }
+        });
+
+        // Track shift key for constrained shapes
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') {
+                this.shiftHeld = true;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') {
+                this.shiftHeld = false;
+            }
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -549,12 +598,47 @@ const Tools = {
 
     /**
      * Generate shape points based on type and bounds
+     * If shift is held, constrain proportions
      */
     generateShapePoints(shapeType, start, end) {
-        const minX = Math.min(start.x, end.x);
-        const maxX = Math.max(start.x, end.x);
-        const minY = Math.min(start.y, end.y);
-        const maxY = Math.max(start.y, end.y);
+        let endX = end.x;
+        let endY = end.y;
+
+        // Constrain proportions if shift is held
+        if (this.shiftHeld) {
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+
+            if (shapeType === 'shape-line') {
+                // Snap to 45-degree angles
+                const absDx = Math.abs(dx);
+                const absDy = Math.abs(dy);
+                const maxD = Math.max(absDx, absDy);
+
+                if (absDx > absDy * 2) {
+                    // Horizontal line
+                    endY = start.y;
+                } else if (absDy > absDx * 2) {
+                    // Vertical line
+                    endX = start.x;
+                } else {
+                    // 45-degree diagonal
+                    const sign = (dx * dy >= 0) ? 1 : -1;
+                    endX = start.x + maxD * Math.sign(dx);
+                    endY = start.y + maxD * Math.sign(dy);
+                }
+            } else {
+                // Square/circle constraint - use larger dimension
+                const size = Math.max(Math.abs(dx), Math.abs(dy));
+                endX = start.x + size * Math.sign(dx || 1);
+                endY = start.y + size * Math.sign(dy || 1);
+            }
+        }
+
+        const minX = Math.min(start.x, endX);
+        const maxX = Math.max(start.x, endX);
+        const minY = Math.min(start.y, endY);
+        const maxY = Math.max(start.y, endY);
         const width = maxX - minX;
         const height = maxY - minY;
         const centerX = (minX + maxX) / 2;
@@ -562,7 +646,7 @@ const Tools = {
 
         switch (shapeType) {
             case 'shape-line':
-                return [start, end];
+                return [start, { x: endX, y: endY }];
 
             case 'shape-rect':
                 return [
