@@ -12,7 +12,8 @@ const Tools = {
     // Tool defaults (remembered in localStorage)
     toolDefaults: {
         eraser: 'eraser-pixel',
-        laser: 'laser-plain'
+        laser: 'laser-plain',
+        shape: 'shape-rect'
     },
 
     // Tool-specific state
@@ -33,6 +34,9 @@ const Tools = {
     initialScale: 1,
     pinchCenter: { x: 0, y: 0 },
 
+    // Shape drawing state
+    shapeStart: null,
+
     /**
      * Initialize tools
      */
@@ -49,6 +53,8 @@ const Tools = {
             tool = this.toolDefaults.eraser;
         } else if (tool === 'laser') {
             tool = this.toolDefaults.laser;
+        } else if (tool === 'shape') {
+            tool = this.toolDefaults.shape;
         }
 
         // Update defaults when subtool is selected
@@ -56,6 +62,8 @@ const Tools = {
             this.toolDefaults.eraser = tool;
         } else if (tool === 'laser-plain' || tool === 'laser-trail') {
             this.toolDefaults.laser = tool;
+        } else if (tool.startsWith('shape-')) {
+            this.toolDefaults.shape = tool;
         }
 
         this.currentTool = tool;
@@ -102,6 +110,9 @@ const Tools = {
                 break;
             case 'move':
                 canvas.classList.add('cursor-move');
+                break;
+            case 'shape':
+                canvas.classList.add('cursor-crosshair');
                 break;
             case 'laser':
                 canvas.classList.add('cursor-laser');
@@ -288,6 +299,13 @@ const Tools = {
                 this.showLaser(coords.x, coords.y);
                 this.startLaserTrailAnimation();
                 break;
+
+            case 'shape-line':
+            case 'shape-rect':
+            case 'shape-circle':
+            case 'shape-triangle':
+                this.shapeStart = Canvas.toCanvas(coords.x, coords.y);
+                break;
         }
     },
 
@@ -357,6 +375,15 @@ const Tools = {
             case 'laser-trail':
                 this.laserTrail.push({ x: coords.x, y: coords.y, time: Date.now() });
                 this.showLaser(coords.x, coords.y);
+                break;
+
+            case 'shape-line':
+            case 'shape-rect':
+            case 'shape-circle':
+            case 'shape-triangle':
+                if (this.shapeStart) {
+                    this.drawShapePreview(coords.x, coords.y);
+                }
                 break;
         }
 
@@ -433,11 +460,21 @@ const Tools = {
             case 'laser-trail':
                 // Trail fades out naturally via animation
                 break;
+
+            case 'shape-line':
+            case 'shape-rect':
+            case 'shape-circle':
+            case 'shape-triangle':
+                if (this.shapeStart) {
+                    this.finalizeShape(this.lastX, this.lastY);
+                    this.shapeStart = null;
+                }
+                break;
         }
     },
 
     /**
-     * Snap stroke to detected shape
+     * Snap stroke to detected shape (lines and circles only)
      */
     snapToShape(stroke) {
         if (!stroke || !stroke.points || stroke.points.length < 3) return null;
@@ -464,7 +501,7 @@ const Tools = {
         const closedThreshold = Math.max(width, height) * 0.15;
         const isClosed = Math.hypot(lastPoint.x - firstPoint.x, lastPoint.y - firstPoint.y) < closedThreshold;
 
-        // Calculate path length and average deviation from line
+        // Calculate path length
         let pathLength = 0;
         for (let i = 1; i < points.length; i++) {
             pathLength += Math.hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y);
@@ -473,7 +510,6 @@ const Tools = {
         // Detect LINE
         const directDist = Math.hypot(lastPoint.x - firstPoint.x, lastPoint.y - firstPoint.y);
         if (!isClosed && pathLength < directDist * 1.2 && pathLength > 20) {
-            // It's a line
             return {
                 ...stroke,
                 points: [firstPoint, lastPoint]
@@ -490,9 +526,8 @@ const Tools = {
             }, 0) / points.length;
             const circularity = 1 - Math.sqrt(radiusVariance) / avgRadius;
 
-            // Detect CIRCLE/ELLIPSE
+            // Detect CIRCLE/ELLIPSE (high circularity)
             if (circularity > 0.85) {
-                const radius = avgRadius;
                 const circlePoints = [];
                 const segments = 36;
                 for (let i = 0; i <= segments; i++) {
@@ -507,171 +542,120 @@ const Tools = {
                     points: circlePoints
                 };
             }
+        }
 
-            // Detect RECTANGLE
-            const aspectRatio = width / height;
-            if (aspectRatio > 0.5 && aspectRatio < 2) {
-                // Check if points cluster around corners
-                const corners = [
+        return null;
+    },
+
+    /**
+     * Generate shape points based on type and bounds
+     */
+    generateShapePoints(shapeType, start, end) {
+        const minX = Math.min(start.x, end.x);
+        const maxX = Math.max(start.x, end.x);
+        const minY = Math.min(start.y, end.y);
+        const maxY = Math.max(start.y, end.y);
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+
+        switch (shapeType) {
+            case 'shape-line':
+                return [start, end];
+
+            case 'shape-rect':
+                return [
                     { x: minX, y: minY },
                     { x: maxX, y: minY },
                     { x: maxX, y: maxY },
-                    { x: minX, y: maxY }
+                    { x: minX, y: maxY },
+                    { x: minX, y: minY }
                 ];
 
-                // Check if stroke follows edges
-                let edgeDeviation = 0;
-                for (const p of points) {
-                    const distToLeft = Math.abs(p.x - minX);
-                    const distToRight = Math.abs(p.x - maxX);
-                    const distToTop = Math.abs(p.y - minY);
-                    const distToBottom = Math.abs(p.y - maxY);
-                    const minEdgeDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
-                    edgeDeviation += minEdgeDist;
+            case 'shape-circle':
+                const points = [];
+                const segments = 36;
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2;
+                    points.push({
+                        x: centerX + Math.cos(angle) * (width / 2),
+                        y: centerY + Math.sin(angle) * (height / 2)
+                    });
                 }
-                edgeDeviation /= points.length;
+                return points;
 
-                if (edgeDeviation < Math.max(width, height) * 0.15) {
-                    return {
-                        ...stroke,
-                        points: [...corners, corners[0]]
-                    };
-                }
-            }
+            case 'shape-triangle':
+                return [
+                    { x: centerX, y: minY },
+                    { x: maxX, y: maxY },
+                    { x: minX, y: maxY },
+                    { x: centerX, y: minY }
+                ];
 
-            // Detect TRIANGLE
-            const triangleCorners = this.detectTriangle(points, centerX, centerY, width, height);
-            if (triangleCorners) {
-                return {
-                    ...stroke,
-                    points: [...triangleCorners, triangleCorners[0]]
-                };
-            }
+            default:
+                return [];
         }
-
-        return null;
     },
 
     /**
-     * Detect triangle shape using corner detection
+     * Draw shape preview while dragging
      */
-    detectTriangle(points, centerX, centerY, width, height) {
-        if (width < 20 || height < 20) return null;
-        if (points.length < 10) return null;
+    drawShapePreview(x, y) {
+        const end = Canvas.toCanvas(x, y);
+        const points = this.generateShapePoints(this.currentTool, this.shapeStart, end);
 
-        // Find corners by detecting sharp direction changes
-        const corners = this.findCorners(points, 3);
+        if (points.length < 2) return;
 
-        if (corners.length === 3) {
-            // Verify it forms a reasonable triangle
-            const [p1, p2, p3] = corners;
-            const area = Math.abs(
-                (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)
-            ) / 2;
-            const minArea = (width * height) * 0.2;
+        Canvas.redraw();
 
-            if (area > minArea) {
-                return corners;
-            }
+        const ctx = Canvas.drawCtx;
+        ctx.save();
+        ctx.strokeStyle = this.brushColor;
+        ctx.lineWidth = this.brushSize * Canvas.scale;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.setLineDash([5, 5]);
+
+        ctx.beginPath();
+        const first = Canvas.toScreen(points[0].x, points[0].y);
+        ctx.moveTo(first.x, first.y);
+
+        for (let i = 1; i < points.length; i++) {
+            const p = Canvas.toScreen(points[i].x, points[i].y);
+            ctx.lineTo(p.x, p.y);
         }
-
-        // Fallback: find 3 most extreme points
-        const extremeCorners = this.findExtremePoints(points, 3);
-        if (extremeCorners.length === 3) {
-            const [p1, p2, p3] = extremeCorners;
-            const area = Math.abs(
-                (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)
-            ) / 2;
-            const minArea = (width * height) * 0.2;
-
-            if (area > minArea) {
-                return extremeCorners;
-            }
-        }
-
-        return null;
+        ctx.stroke();
+        ctx.restore();
     },
 
     /**
-     * Find corners by detecting sharp direction changes
+     * Finalize shape and add as stroke
      */
-    findCorners(points, targetCount) {
-        if (points.length < 5) return [];
+    finalizeShape(x, y) {
+        const end = Canvas.toCanvas(x, y);
+        const points = this.generateShapePoints(this.currentTool, this.shapeStart, end);
 
-        const angles = [];
+        if (points.length < 2) return;
 
-        // Calculate direction change at each point
-        for (let i = 2; i < points.length - 2; i++) {
-            const prev = points[i - 2];
-            const curr = points[i];
-            const next = points[i + 2];
+        // Minimum size check
+        const dx = Math.abs(end.x - this.shapeStart.x);
+        const dy = Math.abs(end.y - this.shapeStart.y);
+        if (dx < 5 && dy < 5) return;
 
-            const angle1 = Math.atan2(curr.y - prev.y, curr.x - prev.x);
-            const angle2 = Math.atan2(next.y - curr.y, next.x - curr.x);
+        const stroke = {
+            type: 'shape',
+            points: points,
+            color: this.brushColor,
+            size: this.brushSize,
+            opacity: 1
+        };
 
-            let diff = Math.abs(angle2 - angle1);
-            if (diff > Math.PI) diff = 2 * Math.PI - diff;
-
-            angles.push({ index: i, angle: diff, point: curr });
-        }
-
-        // Sort by sharpest angle change
-        angles.sort((a, b) => b.angle - a.angle);
-
-        // Pick corners that are well-separated
-        const corners = [];
-        const minDist = Math.max(points.length / 6, 3);
-
-        for (const candidate of angles) {
-            if (corners.length >= targetCount) break;
-
-            const tooClose = corners.some(c =>
-                Math.abs(c.index - candidate.index) < minDist
-            );
-
-            if (!tooClose && candidate.angle > 0.3) {
-                corners.push(candidate);
-            }
-        }
-
-        return corners.map(c => c.point);
-    },
-
-    /**
-     * Find extreme points (furthest from center and from each other)
-     */
-    findExtremePoints(points, count) {
-        if (points.length < count) return [];
-
-        // Find centroid
-        const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
-        const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
-
-        // Sort by distance from center
-        const byDist = points.map((p, i) => ({
-            point: p,
-            dist: Math.hypot(p.x - cx, p.y - cy),
-            index: i
-        })).sort((a, b) => b.dist - a.dist);
-
-        // Pick well-separated extreme points
-        const result = [byDist[0]];
-        const minSeparation = points.length / 4;
-
-        for (const candidate of byDist.slice(1)) {
-            if (result.length >= count) break;
-
-            const wellSeparated = result.every(r =>
-                Math.abs(r.index - candidate.index) > minSeparation ||
-                Math.hypot(r.point.x - candidate.point.x, r.point.y - candidate.point.y) > 20
-            );
-
-            if (wellSeparated) {
-                result.push(candidate);
-            }
-        }
-
-        return result.map(r => r.point);
+        Canvas.strokes.push(stroke);
+        Canvas.undoStack.push({ action: 'add', stroke: stroke });
+        Canvas.redoStack = [];
+        Canvas.redraw();
+        App.triggerAutoSave();
     },
 
     /**

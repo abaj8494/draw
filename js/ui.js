@@ -115,6 +115,9 @@ const UI = {
         if (group === 'laser') {
             return tool === 'laser-plain' || tool === 'laser-trail';
         }
+        if (group === 'shape') {
+            return tool.startsWith('shape-');
+        }
         return false;
     },
 
@@ -489,6 +492,8 @@ const UI = {
                 parentTool = 'eraser';
             } else if (settings.tool === 'laser-plain' || settings.tool === 'laser-trail') {
                 parentTool = 'laser';
+            } else if (settings.tool && settings.tool.startsWith('shape-')) {
+                parentTool = 'shape';
             }
 
             toolBtns.forEach(btn => {
