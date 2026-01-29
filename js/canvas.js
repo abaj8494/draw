@@ -9,6 +9,7 @@ const Canvas = {
     drawCtx: null,
     width: 0,
     height: 0,
+    dpr: 1, // Device pixel ratio for sharp rendering
 
     // Pan/zoom state
     offsetX: 0,
@@ -49,16 +50,28 @@ const Canvas = {
     },
 
     /**
-     * Resize canvases to fill window
+     * Resize canvases to fill window with high-DPI support
      */
     resize() {
+        this.dpr = window.devicePixelRatio || 1;
         this.width = window.innerWidth;
         this.height = window.innerHeight;
 
-        this.bgCanvas.width = this.width;
-        this.bgCanvas.height = this.height;
-        this.drawCanvas.width = this.width;
-        this.drawCanvas.height = this.height;
+        // Set canvas size accounting for device pixel ratio
+        this.bgCanvas.width = this.width * this.dpr;
+        this.bgCanvas.height = this.height * this.dpr;
+        this.drawCanvas.width = this.width * this.dpr;
+        this.drawCanvas.height = this.height * this.dpr;
+
+        // Set CSS size to match logical pixels
+        this.bgCanvas.style.width = this.width + 'px';
+        this.bgCanvas.style.height = this.height + 'px';
+        this.drawCanvas.style.width = this.width + 'px';
+        this.drawCanvas.style.height = this.height + 'px';
+
+        // Scale context to match DPR
+        this.bgCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        this.drawCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
         this.drawBackground();
         this.redraw();
