@@ -39,6 +39,26 @@
                 </div>
 
                 <div class="tool-group expandable-group">
+                    <button class="tool-btn" data-tool="shape" data-expandable="shape" title="Shapes">
+                        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                    </button>
+                    <div class="tool-submenu hidden" data-submenu="shape">
+                        <button class="tool-btn subtool" data-tool="shape-line" title="Line">
+                            <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                        </button>
+                        <button class="tool-btn subtool" data-tool="shape-rect" title="Rectangle">
+                            <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                        </button>
+                        <button class="tool-btn subtool" data-tool="shape-circle" title="Circle">
+                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                        </button>
+                        <button class="tool-btn subtool" data-tool="shape-triangle" title="Triangle">
+                            <svg viewBox="0 0 24 24"><path d="M12 4L3 20h18z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="tool-group expandable-group">
                     <button class="tool-btn" data-tool="eraser" data-expandable="eraser" title="Eraser">
                         <svg viewBox="0 0 24 24"><path d="M16.24 3.56l4.95 4.94c.78.79.78 2.05 0 2.84L12 20.53a4.008 4.008 0 0 1-5.66 0L2.81 17c-.78-.79-.78-2.05 0-2.84l10.6-10.6c.79-.78 2.05-.78 2.83 0zm-1.41 1.42L6.93 12.88l4.24 4.24 7.9-7.9-4.24-4.24zM4 21h16v2H4v-2z"/></svg>
                     </button>

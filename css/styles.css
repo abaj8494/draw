@@ -581,6 +581,7 @@ canvas {
 .cursor-pan-active { cursor: grabbing; }
 .cursor-move { cursor: move; }
 .cursor-move-active { cursor: grabbing; }
+.cursor-crosshair { cursor: crosshair; }
 .cursor-laser { cursor: none; }
 
 /* Mobile Styles */
