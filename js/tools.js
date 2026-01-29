@@ -192,6 +192,14 @@ const Tools = {
             }
         }, { passive: false });
 
+        // Mouse wheel zoom
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+            const newScale = Canvas.scale * zoomFactor;
+            Canvas.setScale(newScale, e.clientX, e.clientY);
+        }, { passive: false });
+
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey) {
@@ -242,12 +250,7 @@ const Tools = {
                 break;
 
             case 'eraser-object':
-                const strokeIndex = Canvas.findStrokeAt(coords.x, coords.y);
-                if (strokeIndex >= 0) {
-                    Canvas.removeStroke(strokeIndex);
-                    App.triggerAutoSave();
-                }
-                this.isDrawing = false;
+                this.eraseObjectAt(coords.x, coords.y);
                 break;
 
             case 'lasso':
@@ -313,6 +316,10 @@ const Tools = {
 
             case 'eraser-pixel':
                 Canvas.pixelErase(coords.x, coords.y, this.brushSize * 2);
+                break;
+
+            case 'eraser-object':
+                this.eraseObjectAt(coords.x, coords.y);
                 break;
 
             case 'lasso':
@@ -381,6 +388,7 @@ const Tools = {
                 break;
 
             case 'eraser-pixel':
+            case 'eraser-object':
                 App.triggerAutoSave();
                 break;
 
@@ -532,7 +540,7 @@ const Tools = {
             }
 
             // Detect TRIANGLE
-            const triangleCorners = this.detectTriangle(points, minX, minY, maxX, maxY);
+            const triangleCorners = this.detectTriangle(points, centerX, centerY, width, height);
             if (triangleCorners) {
                 return {
                     ...stroke,
@@ -545,40 +553,125 @@ const Tools = {
     },
 
     /**
-     * Detect triangle shape
+     * Detect triangle shape using corner detection
      */
-    detectTriangle(points, minX, minY, maxX, maxY) {
-        // Find 3 most extreme points that could form corners
-        const width = maxX - minX;
-        const height = maxY - minY;
-
+    detectTriangle(points, centerX, centerY, width, height) {
         if (width < 20 || height < 20) return null;
+        if (points.length < 10) return null;
 
-        // Sample points and find candidates for corners
-        const corners = [];
-        const samplePoints = points.filter((_, i) => i % 3 === 0);
+        // Find corners by detecting sharp direction changes
+        const corners = this.findCorners(points, 3);
 
-        // Find topmost, leftmost bottom, rightmost bottom for upward triangle
-        let top = { x: 0, y: Infinity };
-        let bottomLeft = { x: Infinity, y: -Infinity };
-        let bottomRight = { x: -Infinity, y: -Infinity };
+        if (corners.length === 3) {
+            // Verify it forms a reasonable triangle
+            const [p1, p2, p3] = corners;
+            const area = Math.abs(
+                (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)
+            ) / 2;
+            const minArea = (width * height) * 0.2;
 
-        for (const p of samplePoints) {
-            if (p.y < top.y) top = p;
-            if (p.y > bottomLeft.y - height * 0.1 && p.x < bottomLeft.x) bottomLeft = p;
-            if (p.y > bottomRight.y - height * 0.1 && p.x > bottomRight.x) bottomRight = p;
+            if (area > minArea) {
+                return corners;
+            }
         }
 
-        // Check if these form a reasonable triangle
-        const area = Math.abs((bottomRight.x - top.x) * (bottomLeft.y - top.y) -
-                            (bottomLeft.x - top.x) * (bottomRight.y - top.y)) / 2;
-        const expectedArea = width * height / 2;
+        // Fallback: find 3 most extreme points
+        const extremeCorners = this.findExtremePoints(points, 3);
+        if (extremeCorners.length === 3) {
+            const [p1, p2, p3] = extremeCorners;
+            const area = Math.abs(
+                (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)
+            ) / 2;
+            const minArea = (width * height) * 0.2;
 
-        if (area > expectedArea * 0.4 && area < expectedArea * 1.5) {
-            return [top, bottomRight, bottomLeft];
+            if (area > minArea) {
+                return extremeCorners;
+            }
         }
 
         return null;
+    },
+
+    /**
+     * Find corners by detecting sharp direction changes
+     */
+    findCorners(points, targetCount) {
+        if (points.length < 5) return [];
+
+        const angles = [];
+
+        // Calculate direction change at each point
+        for (let i = 2; i < points.length - 2; i++) {
+            const prev = points[i - 2];
+            const curr = points[i];
+            const next = points[i + 2];
+
+            const angle1 = Math.atan2(curr.y - prev.y, curr.x - prev.x);
+            const angle2 = Math.atan2(next.y - curr.y, next.x - curr.x);
+
+            let diff = Math.abs(angle2 - angle1);
+            if (diff > Math.PI) diff = 2 * Math.PI - diff;
+
+            angles.push({ index: i, angle: diff, point: curr });
+        }
+
+        // Sort by sharpest angle change
+        angles.sort((a, b) => b.angle - a.angle);
+
+        // Pick corners that are well-separated
+        const corners = [];
+        const minDist = Math.max(points.length / 6, 3);
+
+        for (const candidate of angles) {
+            if (corners.length >= targetCount) break;
+
+            const tooClose = corners.some(c =>
+                Math.abs(c.index - candidate.index) < minDist
+            );
+
+            if (!tooClose && candidate.angle > 0.3) {
+                corners.push(candidate);
+            }
+        }
+
+        return corners.map(c => c.point);
+    },
+
+    /**
+     * Find extreme points (furthest from center and from each other)
+     */
+    findExtremePoints(points, count) {
+        if (points.length < count) return [];
+
+        // Find centroid
+        const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+        const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+
+        // Sort by distance from center
+        const byDist = points.map((p, i) => ({
+            point: p,
+            dist: Math.hypot(p.x - cx, p.y - cy),
+            index: i
+        })).sort((a, b) => b.dist - a.dist);
+
+        // Pick well-separated extreme points
+        const result = [byDist[0]];
+        const minSeparation = points.length / 4;
+
+        for (const candidate of byDist.slice(1)) {
+            if (result.length >= count) break;
+
+            const wellSeparated = result.every(r =>
+                Math.abs(r.index - candidate.index) > minSeparation ||
+                Math.hypot(r.point.x - candidate.point.x, r.point.y - candidate.point.y) > 20
+            );
+
+            if (wellSeparated) {
+                result.push(candidate);
+            }
+        }
+
+        return result.map(r => r.point);
     },
 
     /**
@@ -784,6 +877,16 @@ const Tools = {
         };
 
         requestAnimationFrame(animate);
+    },
+
+    /**
+     * Erase any object at the given position
+     */
+    eraseObjectAt(x, y) {
+        const strokeIndex = Canvas.findStrokeAt(x, y);
+        if (strokeIndex >= 0) {
+            Canvas.removeStroke(strokeIndex);
+        }
     },
 
     /**
