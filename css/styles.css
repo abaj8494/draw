@@ -578,7 +578,7 @@ canvas {
 .cursor-lasso { cursor: crosshair; }
 .cursor-marquee { cursor: crosshair; }
 .cursor-pan { cursor: grab; }
-.cursor-pan-active { cursor: grabbing; }
+.cursor-pan-active, .cursor-panning { cursor: grabbing; }
 .cursor-move { cursor: move; }
 .cursor-move-active { cursor: grabbing; }
 .cursor-crosshair { cursor: crosshair; }
