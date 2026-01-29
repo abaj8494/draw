@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Draw</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Background Canvas -->
+        <canvas id="background-canvas"></canvas>
+        <!-- Drawing Canvas -->
+        <canvas id="drawing-canvas"></canvas>
+
+        <!-- Mobile Toggle Button -->
+        <button id="mobile-toggle" class="mobile-only">
+            <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+        </button>
+
+        <!-- Toolbar -->
+        <div id="toolbar" class="toolbar">
+            <div class="toolbar-header">
+                <span class="toolbar-title">Tools</span>
+                <button id="toolbar-close" class="mobile-only">&times;</button>
+            </div>
+
+            <div class="toolbar-section">
+                <div class="tool-group">
+                    <button class="tool-btn active" data-tool="pencil" title="Pencil">
+                        <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                    </button>
+                    <button class="tool-btn" data-tool="pen" title="Pen (Smooth)">
+                        <svg viewBox="0 0 24 24"><path d="M12 19c0 .55-.45 1-1 1s-1-.45-1-1 .45-1 1-1 1 .45 1 1zm-3-2c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1zm10-9c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1s-1 .45-1 1v1h-1c-.55 0-1 .45-1 1s.45 1 1 1h1v1c0 .55.45 1 1 1zM4.5 13H4v2h.5c.28 0 .5-.22.5-.5v-1c0-.28-.22-.5-.5-.5zm7.5 4.5c0-.28-.22-.5-.5-.5H9v2h2.5c.28 0 .5-.22.5-.5v-1zM20 7l-7 14-3-3 10-11z"/></svg>
+                    </button>
+                    <button class="tool-btn" data-tool="highlighter" title="Highlighter">
+                        <svg viewBox="0 0 24 24"><path d="M6 14l3 3v5h6v-5l3-3V9H6v5zm5-12h2v3h-2V2zM3.5 5.88l1.41-1.41 2.12 2.12L5.62 8 3.5 5.88zm13.46.71l2.12-2.12 1.41 1.41L18.38 8l-1.42-1.41z"/></svg>
+                    </button>
+                </div>
+
+                <div class="tool-group expandable-group">
+                    <button class="tool-btn" data-tool="eraser" data-expandable="eraser" title="Eraser">
+                        <svg viewBox="0 0 24 24"><path d="M16.24 3.56l4.95 4.94c.78.79.78 2.05 0 2.84L12 20.53a4.008 4.008 0 0 1-5.66 0L2.81 17c-.78-.79-.78-2.05 0-2.84l10.6-10.6c.79-.78 2.05-.78 2.83 0zm-1.41 1.42L6.93 12.88l4.24 4.24 7.9-7.9-4.24-4.24zM4 21h16v2H4v-2z"/></svg>
+                    </button>
+                    <div class="tool-submenu hidden" data-submenu="eraser">
+                        <button class="tool-btn subtool" data-tool="eraser-pixel" title="Pixel Eraser">
+                            <svg viewBox="0 0 24 24"><path d="M16.24 3.56l4.95 4.94c.78.79.78 2.05 0 2.84L12 20.53a4.008 4.008 0 0 1-5.66 0L2.81 17c-.78-.79-.78-2.05 0-2.84l10.6-10.6c.79-.78 2.05-.78 2.83 0zm-1.41 1.42L6.93 12.88l4.24 4.24 7.9-7.9-4.24-4.24zM4 21h16v2H4v-2z"/></svg>
+                        </button>
+                        <button class="tool-btn subtool" data-tool="eraser-object" title="Object Eraser">
+                            <svg viewBox="0 0 24 24"><path d="M15 16h4v2h-4v-2zm0-8h7v2h-7V8zm0 4h6v2h-6v-2zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12V5z"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="tool-group">
+                    <button class="tool-btn" data-tool="lasso" title="Lasso Select">
+                        <svg viewBox="0 0 24 24"><path d="M15 2c-2.71 0-5.05 1.54-6.22 3.78a7.062 7.062 0 0 0-3 3A7.014 7.014 0 0 0 2 15c0 3.87 3.13 7 7 7 1.93 0 3.68-.79 4.94-2.06l-1.42-1.42A4.94 4.94 0 0 1 9 20c-2.76 0-5-2.24-5-5 0-2.06 1.25-3.83 3.03-4.6.12 2.57 2.24 4.6 4.97 4.6 2.76 0 5-2.24 5-5 0-.27-.03-.53-.07-.79A4.998 4.998 0 0 1 20 10c2.76 0 5-2.24 5-5s-2.24-5-5-5c-2.06 0-3.83 1.25-4.6 3.03A5.01 5.01 0 0 0 15 2z"/></svg>
+                    </button>
+                    <button class="tool-btn" data-tool="marquee" title="Marquee Select">
+                        <svg viewBox="0 0 24 24"><path d="M3 5h2V3c-1.1 0-2 .9-2 2zm0 8h2v-2H3v2zm4 8h2v-2H7v2zM3 9h2V7H3v2zm10-6h-2v2h2V3zm6 0v2h2c0-1.1-.9-2-2-2zM5 21v-2H3c0 1.1.9 2 2 2zm-2-4h2v-2H3v2zM9 3H7v2h2V3zm2 18h2v-2h-2v2zm8-8h2v-2h-2v2zm0 8c1.1 0 2-.9 2-2h-2v2zm0-12h2V7h-2v2zm0 8h2v-2h-2v2zm-4 4h2v-2h-2v2zm0-16h2V3h-2v2z"/></svg>
+                    </button>
+                </div>
+
+                <div class="tool-group">
+                    <button class="tool-btn" data-tool="pan" title="Pan">
+                        <svg viewBox="0 0 24 24"><path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/></svg>
+                    </button>
+                    <button class="tool-btn" data-tool="move" title="Move Selection">
+                        <svg viewBox="0 0 24 24"><path d="M13 6v5h5V7.75L22.25 12 18 16.25V13h-5v5h3.25L12 22.25 7.75 18H11v-5H6v3.25L1.75 12 6 7.75V11h5V6H7.75L12 1.75 16.25 6H13z"/></svg>
+                    </button>
+                </div>
+
+                <div class="tool-group expandable-group">
+                    <button class="tool-btn" data-tool="laser" data-expandable="laser" title="Laser Pointer">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
+                    </button>
+                    <div class="tool-submenu hidden" data-submenu="laser">
+                        <button class="tool-btn subtool" data-tool="laser-plain" title="Laser (No Trail)">
+                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg>
+                        </button>
+                        <button class="tool-btn subtool" data-tool="laser-trail" title="Laser (With Trail)">
+                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 5v2m0 10v2M5 12h2m10 0h2" stroke-width="2"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="toolbar-section">
+                <label class="toolbar-label">Shape Snap</label>
+                <div class="toggle-row">
+                    <input type="checkbox" id="shape-snap" />
+                    <label for="shape-snap">Snap to shapes</label>
+                </div>
+            </div>
+
+            <div class="toolbar-section">
+                <label class="toolbar-label">Size</label>
+                <input type="range" id="brush-size" min="1" max="50" value="3">
+                <span id="brush-size-value">3</span>
+            </div>
+
+            <div class="toolbar-section">
+                <label class="toolbar-label">Color</label>
+                <input type="color" id="brush-color" value="#000000">
+                <div class="color-presets">
+                    <button class="color-preset" data-color="#000000" style="background:#000000"></button>
+                    <button class="color-preset" data-color="#ff0000" style="background:#ff0000"></button>
+                    <button class="color-preset" data-color="#00ff00" style="background:#00ff00"></button>
+                    <button class="color-preset" data-color="#0000ff" style="background:#0000ff"></button>
+                    <button class="color-preset" data-color="#ffff00" style="background:#ffff00"></button>
+                    <button class="color-preset" data-color="#ff00ff" style="background:#ff00ff"></button>
+                </div>
+            </div>
+
+            <div class="toolbar-section">
+                <label class="toolbar-label">Background</label>
+                <div class="background-options">
+                    <button class="bg-option active" data-bg="grid-light" title="Grid Light">
+                        <div class="bg-preview grid-light"></div>
+                    </button>
+                    <button class="bg-option" data-bg="grid-dark" title="Grid Dark">
+                        <div class="bg-preview grid-dark"></div>
+                    </button>
+                    <button class="bg-option" data-bg="grid-sepia" title="Grid Sepia">
+                        <div class="bg-preview grid-sepia"></div>
+                    </button>
+                    <button class="bg-option" data-bg="blank-light" title="Blank Light">
+                        <div class="bg-preview blank-light"></div>
+                    </button>
+                    <button class="bg-option" data-bg="blank-dark" title="Blank Dark">
+                        <div class="bg-preview blank-dark"></div>
+                    </button>
+                    <button class="bg-option" data-bg="blank-sepia" title="Blank Sepia">
+                        <div class="bg-preview blank-sepia"></div>
+                    </button>
+                </div>
+            </div>
+
+            <div class="toolbar-section">
+                <label class="toolbar-label">Actions</label>
+                <div class="action-buttons">
+                    <button id="undo-btn" class="action-btn" title="Undo (Ctrl+Z)">
+                        <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
+                    </button>
+                    <button id="redo-btn" class="action-btn" title="Redo (Ctrl+Y)">
+                        <svg viewBox="0 0 24 24"><path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>
+                    </button>
+                    <button id="clear-btn" class="action-btn" title="Clear Canvas">
+                        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="toolbar-section">
+                <label class="toolbar-label">Export</label>
+                <div class="export-buttons">
+                    <button id="export-png" class="export-btn">PNG</button>
+                    <button id="export-svg" class="export-btn">SVG</button>
+                    <button id="export-pdf" class="export-btn">PDF</button>
+                </div>
+            </div>
+
+            <div class="toolbar-section">
+                <label class="toolbar-label">Saves</label>
+                <div class="save-buttons">
+                    <button id="save-btn" class="save-btn">Save</button>
+                    <button id="load-btn" class="save-btn">Load</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Browser Modal -->
+        <div id="file-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <span class="modal-title">Saved Drawings</span>
+                    <button id="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="save-form" class="hidden">
+                        <input type="text" id="save-name" placeholder="Drawing name...">
+                        <button id="save-confirm">Save</button>
+                    </div>
+                    <div id="file-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Laser pointer overlay -->
+        <div id="laser-pointer" class="hidden"></div>
+    </div>
+
+    <!-- jsPDF for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <!-- Application Scripts -->
+    <script src="js/storage.js"></script>
+    <script src="js/canvas.js"></script>
+    <script src="js/tools.js"></script>
+    <script src="js/export.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
