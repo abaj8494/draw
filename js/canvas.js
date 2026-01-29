@@ -86,16 +86,18 @@ const Canvas = {
 
             ctx.beginPath();
 
-            // Vertical lines
+            // Vertical lines - align to pixel grid for sharpness
             for (let x = offsetX; x < this.width; x += scaledGridSize) {
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, this.height);
+                const px = Math.round(x) + 0.5; // 0.5 offset for crisp 1px lines
+                ctx.moveTo(px, 0);
+                ctx.lineTo(px, this.height);
             }
 
-            // Horizontal lines
+            // Horizontal lines - align to pixel grid for sharpness
             for (let y = offsetY; y < this.height; y += scaledGridSize) {
-                ctx.moveTo(0, y);
-                ctx.lineTo(this.width, y);
+                const py = Math.round(y) + 0.5; // 0.5 offset for crisp 1px lines
+                ctx.moveTo(0, py);
+                ctx.lineTo(this.width, py);
             }
 
             ctx.stroke();
