@@ -1,0 +1,630 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    touch-action: none;
+}
+
+#app {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+/* Canvas Layers */
+canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+#background-canvas {
+    z-index: 1;
+}
+
+#drawing-canvas {
+    z-index: 2;
+    cursor: crosshair;
+}
+
+/* Toolbar */
+.toolbar {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 200px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+    user-select: none;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+}
+
+.toolbar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #333;
+    color: white;
+    border-radius: 8px 8px 0 0;
+    cursor: move;
+}
+
+.toolbar-title {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.toolbar-section {
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.toolbar-section:last-child {
+    border-bottom: none;
+}
+
+.toolbar-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+/* Tool Buttons */
+.tool-group {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.tool-group:last-child {
+    margin-bottom: 0;
+}
+
+.tool-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.tool-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: #333;
+}
+
+.tool-btn:hover {
+    background: #f0f0f0;
+    border-color: #ccc;
+}
+
+.tool-btn.active {
+    background: #333;
+    border-color: #333;
+}
+
+.tool-btn.active svg {
+    fill: white;
+}
+
+/* Expandable tool groups */
+.expandable-group {
+    position: relative;
+    flex-wrap: wrap;
+}
+
+.tool-submenu {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px dashed #ddd;
+}
+
+.tool-submenu.hidden {
+    display: none;
+}
+
+.tool-btn.subtool {
+    width: 32px;
+    height: 32px;
+}
+
+.tool-btn.subtool svg {
+    width: 16px;
+    height: 16px;
+}
+
+.tool-btn[data-expandable].expanded {
+    position: relative;
+}
+
+.tool-btn[data-expandable].expanded::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid #333;
+}
+
+/* Toggle row */
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toggle-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.toggle-row label {
+    font-size: 12px;
+    color: #333;
+    cursor: pointer;
+}
+
+/* Brush Controls */
+#brush-size {
+    width: 100%;
+    margin-bottom: 4px;
+}
+
+#brush-size-value {
+    font-size: 12px;
+    color: #666;
+}
+
+#brush-color {
+    width: 100%;
+    height: 32px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 8px;
+}
+
+.color-presets {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.color-preset {
+    width: 24px;
+    height: 24px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.color-preset:hover {
+    transform: scale(1.1);
+}
+
+/* Background Options */
+.background-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+.bg-option {
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    padding: 2px;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+
+.bg-option:hover {
+    border-color: #999;
+}
+
+.bg-option.active {
+    border-color: #333;
+}
+
+.bg-preview {
+    width: 100%;
+    height: 24px;
+    border-radius: 2px;
+}
+
+.bg-preview.grid-light {
+    background: linear-gradient(#e0e0e0 1px, transparent 1px),
+                linear-gradient(90deg, #e0e0e0 1px, transparent 1px);
+    background-size: 8px 8px;
+    background-color: #ffffff;
+}
+
+.bg-preview.grid-dark {
+    background: linear-gradient(#333 1px, transparent 1px),
+                linear-gradient(90deg, #333 1px, transparent 1px);
+    background-size: 8px 8px;
+    background-color: #1a1a1a;
+}
+
+.bg-preview.grid-sepia {
+    background: linear-gradient(#d4c9b0 1px, transparent 1px),
+                linear-gradient(90deg, #d4c9b0 1px, transparent 1px);
+    background-size: 8px 8px;
+    background-color: #f5f0e6;
+}
+
+.bg-preview.blank-light {
+    background-color: #ffffff;
+}
+
+.bg-preview.blank-dark {
+    background-color: #1a1a1a;
+}
+
+.bg-preview.blank-sepia {
+    background-color: #f5f0e6;
+}
+
+/* Action Buttons */
+.action-buttons,
+.export-buttons,
+.save-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.action-btn {
+    flex: 1;
+    height: 32px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.action-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: #333;
+}
+
+.action-btn:hover {
+    background: #f0f0f0;
+}
+
+.action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.export-btn,
+.save-btn {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.export-btn:hover,
+.save-btn:hover {
+    background: #333;
+    color: white;
+    border-color: #333;
+}
+
+/* Mobile Toggle */
+#mobile-toggle {
+    display: none;
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(51, 51, 51, 0.9);
+    color: white;
+    cursor: pointer;
+    z-index: 99;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    padding: 10px;
+}
+
+#mobile-toggle svg {
+    width: 24px;
+    height: 24px;
+    fill: white;
+}
+
+#toolbar-close {
+    display: none;
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 400px;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #333;
+    color: white;
+}
+
+.modal-title {
+    font-weight: 600;
+}
+
+#modal-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+}
+
+.modal-body {
+    padding: 16px;
+    max-height: calc(80vh - 50px);
+    overflow-y: auto;
+}
+
+#save-form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+#save-form.hidden {
+    display: none;
+}
+
+#save-name {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+#save-confirm {
+    padding: 8px 16px;
+    background: #333;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+#file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+
+.file-item-name {
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.file-item-name:hover {
+    color: #0066cc;
+}
+
+.file-item-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.file-item-btn {
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.file-item-btn.delete {
+    color: #cc0000;
+    border-color: #cc0000;
+}
+
+.file-item-btn:hover {
+    background: #333;
+    color: white;
+    border-color: #333;
+}
+
+.file-item-btn.delete:hover {
+    background: #cc0000;
+    border-color: #cc0000;
+}
+
+.no-files {
+    text-align: center;
+    color: #999;
+    padding: 20px;
+}
+
+/* Laser Pointer */
+#laser-pointer {
+    position: fixed;
+    width: 12px;
+    height: 12px;
+    background: radial-gradient(circle, #ff0000 0%, rgba(255, 0, 0, 0.5) 50%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 50;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000;
+}
+
+#laser-pointer.hidden {
+    display: none;
+}
+
+/* Selection overlay */
+.selection-overlay {
+    position: absolute;
+    border: 2px dashed #0066cc;
+    background: rgba(0, 102, 204, 0.1);
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* Cursor styles */
+.cursor-pencil { cursor: crosshair; }
+.cursor-pen { cursor: crosshair; }
+.cursor-highlighter { cursor: crosshair; }
+.cursor-eraser-pixel { cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="white" stroke="black" stroke-width="2"/></svg>') 12 12, auto; }
+.cursor-eraser-object { cursor: pointer; }
+.cursor-lasso { cursor: crosshair; }
+.cursor-marquee { cursor: crosshair; }
+.cursor-pan { cursor: grab; }
+.cursor-pan-active { cursor: grabbing; }
+.cursor-move { cursor: move; }
+.cursor-move-active { cursor: grabbing; }
+.cursor-laser { cursor: none; }
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+    .mobile-only {
+        display: block !important;
+    }
+
+    #mobile-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    #toolbar-close {
+        display: block;
+    }
+
+    .toolbar {
+        position: fixed;
+        top: 0;
+        left: -220px;
+        width: 220px;
+        height: 100%;
+        border-radius: 0;
+        transition: left 0.3s ease;
+        max-height: 100vh;
+    }
+
+    .toolbar.open {
+        left: 0;
+    }
+
+    .toolbar-header {
+        border-radius: 0;
+    }
+
+    #mobile-toggle.hidden {
+        display: none;
+    }
+}
+
+/* Scrollbar styling */
+.toolbar::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.toolbar::-webkit-scrollbar-track,
+.modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.toolbar::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 3px;
+}
+
+.toolbar::-webkit-scrollbar-thumb:hover,
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
