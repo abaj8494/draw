@@ -28,6 +28,7 @@ const UI = {
         this.setupModal();
         this.setupToolbarDrag();
         this.setupMobileToggle();
+        this.setupToolbarMinimize();
 
         window.addEventListener('resize', () => this.handleResize());
     },
@@ -437,6 +438,19 @@ const UI = {
 
         document.addEventListener('mouseup', () => {
             this.isDragging = false;
+        });
+    },
+
+    /**
+     * Setup toolbar minimize button
+     */
+    setupToolbarMinimize() {
+        const minimizeBtn = document.getElementById('toolbar-minimize');
+
+        minimizeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toolbar.classList.toggle('minimized');
+            minimizeBtn.innerHTML = this.toolbar.classList.contains('minimized') ? '+' : '&minus;';
         });
     },
 
