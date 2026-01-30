@@ -7,21 +7,104 @@ const Export = {
      * Export to PNG
      */
     toPNG() {
-        // Create a temporary canvas with background and drawing combined
+        // Create a temporary canvas at full resolution
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = Canvas.width;
-        tempCanvas.height = Canvas.height;
+        const dpr = Canvas.dpr || 1;
+        tempCanvas.width = Canvas.width * dpr;
+        tempCanvas.height = Canvas.height * dpr;
         const ctx = tempCanvas.getContext('2d');
 
+        // Scale for DPR
+        ctx.scale(dpr, dpr);
+
         // Draw background
-        ctx.drawImage(Canvas.bgCanvas, 0, 0);
+        const bgConfig = Canvas.backgrounds[Canvas.currentBackground];
+        ctx.fillStyle = bgConfig.bg;
+        ctx.fillRect(0, 0, Canvas.width, Canvas.height);
+
+        // Draw grid if needed
+        if (bgConfig.type === 'grid') {
+            ctx.strokeStyle = bgConfig.line;
+            ctx.lineWidth = 1;
+            const scaledGridSize = Canvas.gridSize * Canvas.scale;
+
+            ctx.beginPath();
+            for (let x = Canvas.offsetX % scaledGridSize; x < Canvas.width; x += scaledGridSize) {
+                const px = Math.round(x) + 0.5;
+                ctx.moveTo(px, 0);
+                ctx.lineTo(px, Canvas.height);
+            }
+            for (let y = Canvas.offsetY % scaledGridSize; y < Canvas.height; y += scaledGridSize) {
+                const py = Math.round(y) + 0.5;
+                ctx.moveTo(0, py);
+                ctx.lineTo(Canvas.width, py);
+            }
+            ctx.stroke();
+        }
 
         // Draw all strokes
-        ctx.drawImage(Canvas.drawCanvas, 0, 0);
+        for (const stroke of Canvas.strokes) {
+            this.renderStrokeToContext(ctx, stroke);
+        }
 
         // Create download link
         const dataURL = tempCanvas.toDataURL('image/png');
         this.downloadFile(dataURL, 'drawing.png');
+    },
+
+    /**
+     * Render a stroke to a given context
+     */
+    renderStrokeToContext(ctx, stroke) {
+        if (!stroke || !stroke.points || stroke.points.length === 0) return;
+
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = stroke.color;
+        ctx.lineWidth = stroke.size * Canvas.scale;
+        ctx.globalAlpha = stroke.opacity;
+
+        if (stroke.type === 'highlighter') {
+            ctx.globalCompositeOperation = 'multiply';
+        }
+
+        ctx.beginPath();
+
+        if (stroke.points.length === 1) {
+            const p = stroke.points[0];
+            const screen = Canvas.toScreen(p.x, p.y);
+            ctx.arc(screen.x, screen.y, (stroke.size * Canvas.scale) / 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (stroke.type === 'pen') {
+            const screenPoints = stroke.points.map(p => Canvas.toScreen(p.x, p.y));
+            ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+
+            if (stroke.points.length === 2) {
+                ctx.lineTo(screenPoints[1].x, screenPoints[1].y);
+            } else {
+                for (let i = 1; i < screenPoints.length - 1; i++) {
+                    const xc = (screenPoints[i].x + screenPoints[i + 1].x) / 2;
+                    const yc = (screenPoints[i].y + screenPoints[i + 1].y) / 2;
+                    ctx.quadraticCurveTo(screenPoints[i].x, screenPoints[i].y, xc, yc);
+                }
+                const last = screenPoints[screenPoints.length - 1];
+                const secondLast = screenPoints[screenPoints.length - 2];
+                ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y);
+            }
+            ctx.stroke();
+        } else {
+            const firstScreen = Canvas.toScreen(stroke.points[0].x, stroke.points[0].y);
+            ctx.moveTo(firstScreen.x, firstScreen.y);
+
+            for (let i = 1; i < stroke.points.length; i++) {
+                const screen = Canvas.toScreen(stroke.points[i].x, stroke.points[i].y);
+                ctx.lineTo(screen.x, screen.y);
+            }
+            ctx.stroke();
+        }
+
+        ctx.restore();
     },
 
     /**
@@ -131,17 +214,43 @@ const Export = {
 
         const { jsPDF } = window.jspdf;
 
-        // Create a temporary canvas with background and drawing
+        // Create a temporary canvas at full resolution
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = Canvas.width;
-        tempCanvas.height = Canvas.height;
+        const dpr = Canvas.dpr || 1;
+        tempCanvas.width = Canvas.width * dpr;
+        tempCanvas.height = Canvas.height * dpr;
         const ctx = tempCanvas.getContext('2d');
 
+        ctx.scale(dpr, dpr);
+
         // Draw background
-        ctx.drawImage(Canvas.bgCanvas, 0, 0);
+        const bgConfig = Canvas.backgrounds[Canvas.currentBackground];
+        ctx.fillStyle = bgConfig.bg;
+        ctx.fillRect(0, 0, Canvas.width, Canvas.height);
+
+        if (bgConfig.type === 'grid') {
+            ctx.strokeStyle = bgConfig.line;
+            ctx.lineWidth = 1;
+            const scaledGridSize = Canvas.gridSize * Canvas.scale;
+
+            ctx.beginPath();
+            for (let x = Canvas.offsetX % scaledGridSize; x < Canvas.width; x += scaledGridSize) {
+                const px = Math.round(x) + 0.5;
+                ctx.moveTo(px, 0);
+                ctx.lineTo(px, Canvas.height);
+            }
+            for (let y = Canvas.offsetY % scaledGridSize; y < Canvas.height; y += scaledGridSize) {
+                const py = Math.round(y) + 0.5;
+                ctx.moveTo(0, py);
+                ctx.lineTo(Canvas.width, py);
+            }
+            ctx.stroke();
+        }
 
         // Draw all strokes
-        ctx.drawImage(Canvas.drawCanvas, 0, 0);
+        for (const stroke of Canvas.strokes) {
+            this.renderStrokeToContext(ctx, stroke);
+        }
 
         // Determine orientation based on canvas dimensions
         const orientation = Canvas.width > Canvas.height ? 'landscape' : 'portrait';
