@@ -1,41 +1,17 @@
 /**
- * Storage Module - LocalStorage & IndexedDB management
+ * Storage Module - LocalStorage for auto-save, Server API for named saves
  */
 
 const Storage = {
-    DB_NAME: 'DrawingApp',
-    DB_VERSION: 1,
-    STORE_NAME: 'drawings',
     AUTO_SAVE_KEY: 'draw_autosave',
     SETTINGS_KEY: 'draw_settings',
-    db: null,
 
     /**
-     * Initialize IndexedDB
+     * Initialize storage (no-op for server storage)
      */
     async init() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
-
-            request.onerror = () => {
-                console.error('Failed to open IndexedDB:', request.error);
-                reject(request.error);
-            };
-
-            request.onsuccess = () => {
-                this.db = request.result;
-                resolve();
-            };
-
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-                    const store = db.createObjectStore(this.STORE_NAME, { keyPath: 'id' });
-                    store.createIndex('name', 'name', { unique: false });
-                    store.createIndex('timestamp', 'timestamp', { unique: false });
-                }
-            };
-        });
+        // No initialization needed for server storage
+        return Promise.resolve();
     },
 
     /**
@@ -43,8 +19,8 @@ const Storage = {
      */
     generateDefaultName() {
         const now = new Date();
-        // Convert to AEST (UTC+10/UTC+11 with DST)
-        const aestOffset = 10 * 60; // AEST is UTC+10
+        // Convert to AEST (UTC+10)
+        const aestOffset = 10 * 60;
         const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
         const aestTime = new Date(utcTime + (aestOffset * 60000));
 
@@ -115,84 +91,77 @@ const Storage = {
     },
 
     /**
-     * Save drawing to IndexedDB
+     * Save drawing to server
      */
     async saveDrawing(name, drawingState) {
-        if (!this.db) {
-            throw new Error('Database not initialized');
+        const saveName = name || this.generateDefaultName();
+
+        const response = await fetch('/api/save', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: saveName,
+                data: drawingState
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to save');
         }
 
-        const drawing = {
-            id: name || this.generateDefaultName(),
-            name: name || this.generateDefaultName(),
-            data: drawingState,
-            timestamp: Date.now()
-        };
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(this.STORE_NAME);
-            const request = store.put(drawing);
-
-            request.onsuccess = () => resolve(drawing.id);
-            request.onerror = () => reject(request.error);
-        });
+        const result = await response.json();
+        return result.name;
     },
 
     /**
-     * Load drawing from IndexedDB
+     * Load drawing from server
      */
-    async loadDrawing(id) {
-        if (!this.db) {
-            throw new Error('Database not initialized');
+    async loadDrawing(name) {
+        const response = await fetch(`/api/load/${encodeURIComponent(name)}`);
+
+        if (!response.ok) {
+            throw new Error('Drawing not found');
         }
 
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.STORE_NAME], 'readonly');
-            const store = transaction.objectStore(this.STORE_NAME);
-            const request = store.get(id);
-
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
+        const data = await response.json();
+        return {
+            id: name,
+            name: name,
+            data: data
+        };
     },
 
     /**
-     * List all saved drawings
+     * List all saved drawings from server
      */
     async listDrawings() {
-        if (!this.db) {
-            throw new Error('Database not initialized');
+        const response = await fetch('/api/list');
+
+        if (!response.ok) {
+            throw new Error('Failed to list drawings');
         }
 
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.STORE_NAME], 'readonly');
-            const store = transaction.objectStore(this.STORE_NAME);
-            const request = store.getAll();
-
-            request.onsuccess = () => {
-                const drawings = request.result.sort((a, b) => b.timestamp - a.timestamp);
-                resolve(drawings);
-            };
-            request.onerror = () => reject(request.error);
-        });
+        const files = await response.json();
+        return files.map(f => ({
+            id: f.name,
+            name: f.name,
+            timestamp: f.timestamp * 1000 // Convert to milliseconds
+        }));
     },
 
     /**
-     * Delete drawing from IndexedDB
+     * Delete drawing from server
      */
-    async deleteDrawing(id) {
-        if (!this.db) {
-            throw new Error('Database not initialized');
-        }
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(this.STORE_NAME);
-            const request = store.delete(id);
-
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+    async deleteDrawing(name) {
+        const response = await fetch(`/api/delete/${encodeURIComponent(name)}`, {
+            method: 'DELETE'
         });
+
+        if (!response.ok) {
+            throw new Error('Failed to delete drawing');
+        }
     }
 };
