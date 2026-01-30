@@ -60,9 +60,36 @@ canvas {
     cursor: move;
 }
 
+.toolbar.minimized .toolbar-header {
+    border-radius: 8px;
+}
+
+.toolbar.minimized .toolbar-section {
+    display: none;
+}
+
 .toolbar-title {
     font-weight: 600;
     font-size: 14px;
+}
+
+.toolbar-header-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+#toolbar-minimize {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+#toolbar-minimize:hover {
+    color: #ccc;
 }
 
 .toolbar-section {
