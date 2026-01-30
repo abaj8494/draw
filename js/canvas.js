@@ -302,6 +302,7 @@ const Canvas = {
 
     /**
      * Find stroke at position (for object eraser)
+     * Checks both points and line segments between points
      */
     findStrokeAt(x, y, threshold = 10) {
         const canvasPoint = this.toCanvas(x, y);
@@ -309,17 +310,52 @@ const Canvas = {
 
         for (let i = this.strokes.length - 1; i >= 0; i--) {
             const stroke = this.strokes[i];
+            const hitThreshold = scaledThreshold + stroke.size / 2;
+
+            // Check each point
             for (const point of stroke.points) {
-                const dist = Math.sqrt(
-                    Math.pow(point.x - canvasPoint.x, 2) +
-                    Math.pow(point.y - canvasPoint.y, 2)
-                );
-                if (dist <= scaledThreshold + stroke.size / 2) {
+                const dist = Math.hypot(point.x - canvasPoint.x, point.y - canvasPoint.y);
+                if (dist <= hitThreshold) {
                     return i;
+                }
+            }
+
+            // Check line segments between points
+            if (stroke.points.length > 1) {
+                for (let j = 0; j < stroke.points.length - 1; j++) {
+                    const p1 = stroke.points[j];
+                    const p2 = stroke.points[j + 1];
+                    const dist = this.pointToSegmentDistance(canvasPoint, p1, p2);
+                    if (dist <= hitThreshold) {
+                        return i;
+                    }
                 }
             }
         }
         return -1;
+    },
+
+    /**
+     * Calculate distance from a point to a line segment
+     */
+    pointToSegmentDistance(point, segStart, segEnd) {
+        const dx = segEnd.x - segStart.x;
+        const dy = segEnd.y - segStart.y;
+        const lengthSquared = dx * dx + dy * dy;
+
+        if (lengthSquared === 0) {
+            // Segment is a point
+            return Math.hypot(point.x - segStart.x, point.y - segStart.y);
+        }
+
+        // Project point onto line, clamped to segment
+        let t = ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lengthSquared;
+        t = Math.max(0, Math.min(1, t));
+
+        const projX = segStart.x + t * dx;
+        const projY = segStart.y + t * dy;
+
+        return Math.hypot(point.x - projX, point.y - projY);
     },
 
     /**
