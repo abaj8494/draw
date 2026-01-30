@@ -604,8 +604,12 @@ canvas {
 .cursor-eraser-object { cursor: pointer; }
 .cursor-lasso { cursor: crosshair; }
 .cursor-marquee { cursor: crosshair; }
-.cursor-pan { cursor: grab; }
-.cursor-pan-active, .cursor-panning { cursor: grabbing; }
+.cursor-pan {
+    cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="%23000" d="M18 11V8c0-1.1-.9-2-2-2s-2 .9-2 2v3h-1V5c0-1.1-.9-2-2-2s-2 .9-2 2v6H8V8c0-1.1-.9-2-2-2s-2 .9-2 2v8c0 3.3 2.7 6 6 6h4c3.3 0 6-2.7 6-6v-5c0-1.1-.9-2-2-2s-2 .9-2 2z"/></svg>') 12 12, grab;
+}
+.cursor-pan-active, .cursor-panning {
+    cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="%23000" d="M18 11V8c0-1.1-.9-2-2-2s-2 .9-2 2v3h-1V5c0-1.1-.9-2-2-2s-2 .9-2 2v6H8V8c0-1.1-.9-2-2-2s-2 .9-2 2v8c0 3.3 2.7 6 6 6h4c3.3 0 6-2.7 6-6v-5c0-1.1-.9-2-2-2s-2 .9-2 2z"/></svg>') 12 12, grabbing;
+}
 .cursor-move { cursor: move; }
 .cursor-move-active { cursor: grabbing; }
 .cursor-crosshair { cursor: crosshair; }
