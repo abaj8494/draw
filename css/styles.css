@@ -31,7 +31,6 @@ canvas {
 
 #drawing-canvas {
     z-index: 2;
-    cursor: crosshair;
 }
 
 /* Toolbar */
