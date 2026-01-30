@@ -226,7 +226,7 @@ const UI = {
         clearBtn.addEventListener('click', () => {
             if (Canvas.strokes.length === 0) return;
 
-            if (confirm('Clear the canvas? This can be undone.')) {
+            if (confirm('Clear the canvas? This cannot be undone.')) {
                 Canvas.clearAll();
                 this.updateUndoRedoButtons();
                 App.triggerAutoSave();

@@ -75,6 +75,9 @@ const App = {
 
         const toolSettings = Tools.getSettings();
         Storage.saveSettings(toolSettings);
+
+        // Update undo/redo button states
+        UI.updateUndoRedoButtons();
     },
 
     /**

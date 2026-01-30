@@ -462,14 +462,12 @@ const Tools = {
                     }
                 }
                 if (Canvas.endStroke()) {
-                    UI.updateUndoRedoButtons();
                     App.triggerAutoSave();
                 }
                 break;
 
             case 'eraser-pixel':
             case 'eraser-object':
-                UI.updateUndoRedoButtons();
                 App.triggerAutoSave();
                 break;
 
@@ -503,7 +501,6 @@ const Tools = {
                 Canvas.drawCanvas.classList.remove('cursor-move-active');
                 this.moveStart = null;
                 if (this.selectedStrokes.length > 0) {
-                    UI.updateUndoRedoButtons();
                     App.triggerAutoSave();
                 }
                 break;
@@ -792,7 +789,6 @@ const Tools = {
         Canvas.undoStack.push({ action: 'add', stroke: stroke });
         Canvas.redoStack = [];
         Canvas.redraw();
-        UI.updateUndoRedoButtons();
         App.triggerAutoSave();
     },
 
