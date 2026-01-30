@@ -71,6 +71,11 @@ const Tools = {
             this.toolDefaults.shape = tool;
         }
 
+        // Hide laser when switching away from laser tools
+        if (this.currentTool !== tool) {
+            this.hideLaser();
+        }
+
         this.currentTool = tool;
         if (tool !== 'move') {
             this.clearSelection();
@@ -365,11 +370,9 @@ const Tools = {
         const coords = this.getCoords(e);
 
         if (!this.isDrawing) {
-            if (this.currentTool === 'laser-plain' || this.currentTool === 'laser-trail') {
+            // Only show laser-plain on hover, laser-trail requires mouse down
+            if (this.currentTool === 'laser-plain') {
                 this.showLaser(coords.x, coords.y);
-                if (this.currentTool === 'laser-trail') {
-                    this.laserTrail.push({ x: coords.x, y: coords.y, time: Date.now() });
-                }
             }
             return;
         }
@@ -507,7 +510,8 @@ const Tools = {
                 break;
 
             case 'laser-trail':
-                // Trail fades out naturally via animation
+                // Hide laser pointer, trail fades out via animation
+                this.hideLaser();
                 break;
 
             case 'shape-line':
@@ -589,6 +593,52 @@ const Tools = {
                 return {
                     ...stroke,
                     points: circlePoints
+                };
+            }
+
+            // Detect RECTANGLE - check if points follow edges
+            // Calculate how close points are to the bounding box edges
+            let edgeScore = 0;
+            let cornerScore = 0;
+            const edgeThreshold = Math.max(width, height) * 0.12;
+
+            for (const p of points) {
+                const distToLeft = Math.abs(p.x - minX);
+                const distToRight = Math.abs(p.x - maxX);
+                const distToTop = Math.abs(p.y - minY);
+                const distToBottom = Math.abs(p.y - maxY);
+
+                // Point is near an edge if close to one of the four sides
+                const nearVerticalEdge = Math.min(distToLeft, distToRight) < edgeThreshold;
+                const nearHorizontalEdge = Math.min(distToTop, distToBottom) < edgeThreshold;
+
+                if (nearVerticalEdge || nearHorizontalEdge) {
+                    edgeScore++;
+                }
+
+                // Check if near a corner
+                const nearCorner = (distToLeft < edgeThreshold || distToRight < edgeThreshold) &&
+                                   (distToTop < edgeThreshold || distToBottom < edgeThreshold);
+                if (nearCorner) {
+                    cornerScore++;
+                }
+            }
+
+            const edgeRatio = edgeScore / points.length;
+            const hasEnoughCorners = cornerScore >= 4;
+
+            // If most points are near edges, it's likely a rectangle
+            if (edgeRatio > 0.75 && hasEnoughCorners) {
+                const corners = [
+                    { x: minX, y: minY },
+                    { x: maxX, y: minY },
+                    { x: maxX, y: maxY },
+                    { x: minX, y: maxY },
+                    { x: minX, y: minY }
+                ];
+                return {
+                    ...stroke,
+                    points: corners
                 };
             }
         }
