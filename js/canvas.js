@@ -524,13 +524,13 @@ const Canvas = {
     },
 
     /**
-     * Clear all strokes
+     * Clear all strokes (permanent - clears undo history)
      */
     clearAll() {
         if (this.strokes.length > 0) {
-            this.undoStack.push({ action: 'clear', strokes: [...this.strokes] });
-            this.redoStack = [];
             this.strokes = [];
+            this.undoStack = [];
+            this.redoStack = [];
             this.redraw();
         }
     },
