@@ -24,6 +24,9 @@ const Canvas = {
     undoStack: [],
     redoStack: [],
 
+    // Image cache for rendering pasted images
+    imageCache: new Map(),
+
     // Background configuration
     backgrounds: {
         'grid-light': { type: 'grid', bg: '#ffffff', line: '#e0e0e0' },
@@ -172,9 +175,29 @@ const Canvas = {
     },
 
     /**
+     * Get or create a cached Image element for a data URL
+     */
+    getImage(src) {
+        if (this.imageCache.has(src)) {
+            return this.imageCache.get(src);
+        }
+        const img = new Image();
+        img.src = src;
+        this.imageCache.set(src, img);
+        // Re-render once loaded if it wasn't cached
+        img.onload = () => this.redraw();
+        return img;
+    },
+
+    /**
      * Render a single stroke
      */
     renderStroke(stroke, ctx = this.drawCtx) {
+        if (stroke && stroke.type === 'image') {
+            this.renderImageStroke(stroke, ctx);
+            return;
+        }
+
         if (!stroke || !stroke.points || stroke.points.length === 0) return;
 
         ctx.save();
@@ -213,6 +236,23 @@ const Canvas = {
             ctx.stroke();
         }
 
+        ctx.restore();
+    },
+
+    /**
+     * Render an image stroke
+     */
+    renderImageStroke(stroke, ctx = this.drawCtx) {
+        const img = this.getImage(stroke.src);
+        if (!img.complete || img.naturalWidth === 0) return;
+
+        const topLeft = this.toScreen(stroke.x, stroke.y);
+        const w = stroke.width * this.scale;
+        const h = stroke.height * this.scale;
+
+        ctx.save();
+        ctx.globalAlpha = stroke.opacity;
+        ctx.drawImage(img, topLeft.x, topLeft.y, w, h);
         ctx.restore();
     },
 
@@ -310,6 +350,18 @@ const Canvas = {
 
         for (let i = this.strokes.length - 1; i >= 0; i--) {
             const stroke = this.strokes[i];
+
+            // Image stroke - bounding box hit test
+            if (stroke.type === 'image') {
+                if (canvasPoint.x >= stroke.x - scaledThreshold &&
+                    canvasPoint.x <= stroke.x + stroke.width + scaledThreshold &&
+                    canvasPoint.y >= stroke.y - scaledThreshold &&
+                    canvasPoint.y <= stroke.y + stroke.height + scaledThreshold) {
+                    return i;
+                }
+                continue;
+            }
+
             const hitThreshold = scaledThreshold + stroke.size / 2;
 
             // Check each point
@@ -379,6 +431,22 @@ const Canvas = {
         const indices = [];
         for (let i = 0; i < this.strokes.length; i++) {
             const stroke = this.strokes[i];
+            if (stroke.type === 'image') {
+                // Check four corners of the image
+                const corners = [
+                    { x: stroke.x, y: stroke.y },
+                    { x: stroke.x + stroke.width, y: stroke.y },
+                    { x: stroke.x + stroke.width, y: stroke.y + stroke.height },
+                    { x: stroke.x, y: stroke.y + stroke.height }
+                ];
+                for (const corner of corners) {
+                    if (this.pointInPolygon(corner, polygon)) {
+                        indices.push(i);
+                        break;
+                    }
+                }
+                continue;
+            }
             for (const point of stroke.points) {
                 if (this.pointInPolygon(point, polygon)) {
                     indices.push(i);
@@ -396,6 +464,16 @@ const Canvas = {
         const indices = [];
         for (let i = 0; i < this.strokes.length; i++) {
             const stroke = this.strokes[i];
+            if (stroke.type === 'image') {
+                // Check if image overlaps with selection rect
+                if (stroke.x + stroke.width >= rect.x &&
+                    stroke.x <= rect.x + rect.width &&
+                    stroke.y + stroke.height >= rect.y &&
+                    stroke.y <= rect.y + rect.height) {
+                    indices.push(i);
+                }
+                continue;
+            }
             for (const point of stroke.points) {
                 if (point.x >= rect.x && point.x <= rect.x + rect.width &&
                     point.y >= rect.y && point.y <= rect.y + rect.height) {
@@ -454,9 +532,14 @@ const Canvas = {
             const stroke = this.strokes[index];
             if (!stroke) continue;
 
-            for (const point of stroke.points) {
-                point.x += dx;
-                point.y += dy;
+            if (stroke.type === 'image') {
+                stroke.x += dx;
+                stroke.y += dy;
+            } else {
+                for (const point of stroke.points) {
+                    point.x += dx;
+                    point.y += dy;
+                }
             }
         }
 
@@ -602,6 +685,31 @@ const Canvas = {
     },
 
     /**
+     * Add an image stroke centered on the current viewport
+     */
+    addImageStroke(src, imgWidth, imgHeight) {
+        // Place image at the center of the current viewport (in canvas coords)
+        const centerScreen = { x: this.width / 2, y: this.height / 2 };
+        const centerCanvas = this.toCanvas(centerScreen.x, centerScreen.y);
+
+        const stroke = {
+            type: 'image',
+            src: src,
+            x: centerCanvas.x - imgWidth / 2,
+            y: centerCanvas.y - imgHeight / 2,
+            width: imgWidth,
+            height: imgHeight,
+            opacity: 1
+        };
+
+        this.strokes.push(stroke);
+        this.undoStack.push({ action: 'add', stroke: stroke });
+        this.redoStack = [];
+        this.redraw();
+        return stroke;
+    },
+
+    /**
      * Reset to default state
      */
     reset() {
@@ -609,6 +717,7 @@ const Canvas = {
         this.currentStroke = null;
         this.undoStack = [];
         this.redoStack = [];
+        this.imageCache.clear();
         this.offsetX = 0;
         this.offsetY = 0;
         this.scale = 1;
