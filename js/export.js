@@ -56,6 +56,11 @@ const Export = {
      * Render a stroke to a given context
      */
     renderStrokeToContext(ctx, stroke) {
+        if (stroke && stroke.type === 'image') {
+            this.renderImageToContext(ctx, stroke);
+            return;
+        }
+
         if (!stroke || !stroke.points || stroke.points.length === 0) return;
 
         ctx.save();
@@ -108,6 +113,23 @@ const Export = {
     },
 
     /**
+     * Render an image stroke to a given context (for export)
+     */
+    renderImageToContext(ctx, stroke) {
+        const img = Canvas.getImage(stroke.src);
+        if (!img.complete || img.naturalWidth === 0) return;
+
+        const topLeft = Canvas.toScreen(stroke.x, stroke.y);
+        const w = stroke.width * Canvas.scale;
+        const h = stroke.height * Canvas.scale;
+
+        ctx.save();
+        ctx.globalAlpha = stroke.opacity;
+        ctx.drawImage(img, topLeft.x, topLeft.y, w, h);
+        ctx.restore();
+    },
+
+    /**
      * Export to SVG
      */
     toSVG() {
@@ -145,6 +167,15 @@ const Export = {
         svgContent += '\n  <!-- Strokes -->\n';
 
         for (const stroke of Canvas.strokes) {
+            if (stroke.type === 'image') {
+                const screenPos = Canvas.toScreen(stroke.x, stroke.y);
+                const w = stroke.width * Canvas.scale;
+                const h = stroke.height * Canvas.scale;
+                const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
+                svgContent += `  <image x="${screenPos.x}" y="${screenPos.y}" width="${w}" height="${h}" href="${stroke.src}"${opacity}/>\n`;
+                continue;
+            }
+
             if (!stroke.points || stroke.points.length === 0) continue;
 
             const pathData = this.pointsToSVGPath(stroke.points, stroke.type === 'pen');

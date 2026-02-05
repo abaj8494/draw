@@ -286,6 +286,41 @@ const Tools = {
                 this.clearSelection();
             }
         });
+
+        // Clipboard paste for images
+        document.addEventListener('paste', (e) => {
+            this.handlePaste(e);
+        });
+    },
+
+    /**
+     * Handle paste event - insert image from clipboard onto canvas
+     */
+    handlePaste(e) {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const blob = item.getAsFile();
+                if (!blob) continue;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const dataURL = event.target.result;
+                    const img = new Image();
+                    img.onload = () => {
+                        Canvas.addImageStroke(dataURL, img.naturalWidth, img.naturalHeight);
+                        UI.updateUndoRedoButtons();
+                        App.triggerAutoSave();
+                    };
+                    img.src = dataURL;
+                };
+                reader.readAsDataURL(blob);
+                return; // Only handle the first image
+            }
+        }
     },
 
     /**
@@ -881,18 +916,27 @@ const Tools = {
             const stroke = Canvas.strokes[index];
             if (!stroke) continue;
 
-            // Calculate bounding box
-            let minX = Infinity, minY = Infinity;
-            let maxX = -Infinity, maxY = -Infinity;
+            let minX, minY, maxX, maxY, padding;
 
-            for (const point of stroke.points) {
-                minX = Math.min(minX, point.x);
-                minY = Math.min(minY, point.y);
-                maxX = Math.max(maxX, point.x);
-                maxY = Math.max(maxY, point.y);
+            if (stroke.type === 'image') {
+                minX = stroke.x;
+                minY = stroke.y;
+                maxX = stroke.x + stroke.width;
+                maxY = stroke.y + stroke.height;
+                padding = 5;
+            } else {
+                minX = Infinity; minY = Infinity;
+                maxX = -Infinity; maxY = -Infinity;
+
+                for (const point of stroke.points) {
+                    minX = Math.min(minX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxX = Math.max(maxX, point.x);
+                    maxY = Math.max(maxY, point.y);
+                }
+                padding = stroke.size / 2 + 5;
             }
 
-            const padding = stroke.size / 2 + 5;
             const topLeft = Canvas.toScreen(minX - padding, minY - padding);
             const scaledWidth = (maxX - minX + padding * 2) * Canvas.scale;
             const scaledHeight = (maxY - minY + padding * 2) * Canvas.scale;
