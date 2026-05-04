@@ -15,8 +15,8 @@ const Canvas = {
     offsetX: 0,
     offsetY: 0,
     scale: 1,
-    minScale: 0.25,
-    maxScale: 4,
+    minScale: 0.01,
+    maxScale: 20,
 
     // Drawing state
     strokes: [],
@@ -198,6 +198,11 @@ const Canvas = {
             return;
         }
 
+        if (stroke && stroke.type === 'text') {
+            this.renderTextStroke(stroke, ctx);
+            return;
+        }
+
         if (!stroke || !stroke.points || stroke.points.length === 0) return;
 
         ctx.save();
@@ -253,6 +258,27 @@ const Canvas = {
         ctx.save();
         ctx.globalAlpha = stroke.opacity;
         ctx.drawImage(img, topLeft.x, topLeft.y, w, h);
+        ctx.restore();
+    },
+
+    /**
+     * Render a text stroke
+     */
+    renderTextStroke(stroke, ctx = this.drawCtx) {
+        const pos = this.toScreen(stroke.x, stroke.y);
+        const scaledFontSize = stroke.fontSize * this.scale;
+
+        ctx.save();
+        ctx.globalAlpha = stroke.opacity;
+        ctx.fillStyle = stroke.color;
+        ctx.font = `${scaledFontSize}px sans-serif`;
+        ctx.textBaseline = 'top';
+
+        const lines = stroke.text.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], pos.x, pos.y + i * scaledFontSize * 1.3);
+        }
+
         ctx.restore();
     },
 
@@ -362,6 +388,21 @@ const Canvas = {
                 continue;
             }
 
+            // Text stroke - approximate bounding box
+            if (stroke.type === 'text') {
+                const lines = stroke.text.split('\n');
+                const lineHeight = stroke.fontSize * 1.3;
+                const textHeight = lines.length * lineHeight;
+                const textWidth = Math.max(...lines.map(l => l.length)) * stroke.fontSize * 0.6;
+                if (canvasPoint.x >= stroke.x - scaledThreshold &&
+                    canvasPoint.x <= stroke.x + textWidth + scaledThreshold &&
+                    canvasPoint.y >= stroke.y - scaledThreshold &&
+                    canvasPoint.y <= stroke.y + textHeight + scaledThreshold) {
+                    return i;
+                }
+                continue;
+            }
+
             const hitThreshold = scaledThreshold + stroke.size / 2;
 
             // Check each point
@@ -447,6 +488,12 @@ const Canvas = {
                 }
                 continue;
             }
+            if (stroke.type === 'text') {
+                if (this.pointInPolygon({ x: stroke.x, y: stroke.y }, polygon)) {
+                    indices.push(i);
+                }
+                continue;
+            }
             for (const point of stroke.points) {
                 if (this.pointInPolygon(point, polygon)) {
                     indices.push(i);
@@ -470,6 +517,13 @@ const Canvas = {
                     stroke.x <= rect.x + rect.width &&
                     stroke.y + stroke.height >= rect.y &&
                     stroke.y <= rect.y + rect.height) {
+                    indices.push(i);
+                }
+                continue;
+            }
+            if (stroke.type === 'text') {
+                if (stroke.x >= rect.x && stroke.x <= rect.x + rect.width &&
+                    stroke.y >= rect.y && stroke.y <= rect.y + rect.height) {
                     indices.push(i);
                 }
                 continue;
@@ -532,7 +586,7 @@ const Canvas = {
             const stroke = this.strokes[index];
             if (!stroke) continue;
 
-            if (stroke.type === 'image') {
+            if (stroke.type === 'image' || stroke.type === 'text') {
                 stroke.x += dx;
                 stroke.y += dy;
             } else {
@@ -603,6 +657,14 @@ const Canvas = {
                 this.strokes.splice(item.index, 0, item.stroke);
             }
             this.redoStack.push(action);
+        } else if (action.action === 'resize') {
+            // Save current state for redo
+            const currentStrokes = action.indices.map(i => JSON.parse(JSON.stringify(this.strokes[i])));
+            // Restore original strokes
+            for (let si = 0; si < action.indices.length; si++) {
+                this.strokes[action.indices[si]] = JSON.parse(JSON.stringify(action.originalStrokes[si]));
+            }
+            this.redoStack.push({ ...action, resizedStrokes: currentStrokes });
         } else if (action.action === 'clear') {
             this.strokes = action.strokes;
             this.redoStack.push(action);
@@ -633,6 +695,14 @@ const Canvas = {
                 this.strokes.splice(index, 1);
             }
             this.undoStack.push(action);
+        } else if (action.action === 'resize') {
+            // Save current state for undo
+            const currentStrokes = action.indices.map(i => JSON.parse(JSON.stringify(this.strokes[i])));
+            // Apply the resized strokes
+            for (let si = 0; si < action.indices.length; si++) {
+                this.strokes[action.indices[si]] = JSON.parse(JSON.stringify(action.resizedStrokes[si]));
+            }
+            this.undoStack.push({ ...action, originalStrokes: currentStrokes });
         } else if (action.action === 'clear') {
             this.strokes = [];
             this.undoStack.push(action);
@@ -707,6 +777,103 @@ const Canvas = {
         this.redoStack = [];
         this.redraw();
         return stroke;
+    },
+
+    /**
+     * Get bounding box of a single stroke (in canvas coords)
+     */
+    getStrokeBounds(stroke) {
+        if (stroke.type === 'image') {
+            return { minX: stroke.x, minY: stroke.y, maxX: stroke.x + stroke.width, maxY: stroke.y + stroke.height };
+        }
+        if (stroke.type === 'text') {
+            const lines = stroke.text.split('\n');
+            const lineHeight = stroke.fontSize * 1.3;
+            const textWidth = Math.max(...lines.map(l => l.length)) * stroke.fontSize * 0.6;
+            return { minX: stroke.x, minY: stroke.y, maxX: stroke.x + textWidth, maxY: stroke.y + lines.length * lineHeight };
+        }
+        if (!stroke.points || stroke.points.length === 0) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of stroke.points) {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+        }
+        return { minX, minY, maxX, maxY };
+    },
+
+    /**
+     * Reset view to fit all content in viewport
+     */
+    resetView() {
+        if (this.strokes.length === 0) {
+            this.offsetX = 0;
+            this.offsetY = 0;
+            this.scale = 1;
+            this.drawBackground();
+            this.redraw();
+            return;
+        }
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const stroke of this.strokes) {
+            const b = this.getStrokeBounds(stroke);
+            if (!b) continue;
+            minX = Math.min(minX, b.minX);
+            minY = Math.min(minY, b.minY);
+            maxX = Math.max(maxX, b.maxX);
+            maxY = Math.max(maxY, b.maxY);
+        }
+
+        if (!isFinite(minX)) {
+            this.offsetX = 0;
+            this.offsetY = 0;
+            this.scale = 1;
+        } else {
+            const contentWidth = maxX - minX;
+            const contentHeight = maxY - minY;
+            const padding = 40;
+            const availW = this.width - padding * 2;
+            const availH = this.height - padding * 2;
+
+            this.scale = Math.min(availW / contentWidth, availH / contentHeight, 2);
+            this.offsetX = padding + (availW - contentWidth * this.scale) / 2 - minX * this.scale;
+            this.offsetY = padding + (availH - contentHeight * this.scale) / 2 - minY * this.scale;
+        }
+
+        this.drawBackground();
+        this.redraw();
+    },
+
+    /**
+     * Resize selected strokes relative to an anchor point
+     */
+    resizeStrokes(indices, anchorX, anchorY, scaleX, scaleY) {
+        for (const index of indices) {
+            const stroke = this.strokes[index];
+            if (!stroke) continue;
+
+            if (stroke.type === 'image') {
+                const newX = anchorX + (stroke.x - anchorX) * scaleX;
+                const newY = anchorY + (stroke.y - anchorY) * scaleY;
+                stroke.x = newX;
+                stroke.y = newY;
+                stroke.width *= Math.abs(scaleX);
+                stroke.height *= Math.abs(scaleY);
+            } else if (stroke.type === 'text') {
+                stroke.x = anchorX + (stroke.x - anchorX) * scaleX;
+                stroke.y = anchorY + (stroke.y - anchorY) * scaleY;
+                stroke.fontSize *= Math.abs(Math.max(scaleX, scaleY));
+            } else if (stroke.points) {
+                for (const point of stroke.points) {
+                    point.x = anchorX + (point.x - anchorX) * scaleX;
+                    point.y = anchorY + (point.y - anchorY) * scaleY;
+                }
+                stroke.size *= Math.abs(Math.max(scaleX, scaleY));
+            }
+        }
+        this.redraw();
     },
 
     /**

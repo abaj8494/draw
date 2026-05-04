@@ -61,6 +61,11 @@ const Export = {
             return;
         }
 
+        if (stroke && stroke.type === 'text') {
+            Canvas.renderTextStroke(stroke, ctx);
+            return;
+        }
+
         if (!stroke || !stroke.points || stroke.points.length === 0) return;
 
         ctx.save();
@@ -173,6 +178,19 @@ const Export = {
                 const h = stroke.height * Canvas.scale;
                 const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
                 svgContent += `  <image x="${screenPos.x}" y="${screenPos.y}" width="${w}" height="${h}" href="${stroke.src}"${opacity}/>\n`;
+                continue;
+            }
+
+            if (stroke.type === 'text') {
+                const screenPos = Canvas.toScreen(stroke.x, stroke.y);
+                const scaledFontSize = stroke.fontSize * Canvas.scale;
+                const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
+                const escapedText = stroke.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const lines = escapedText.split('\n');
+                for (let li = 0; li < lines.length; li++) {
+                    const ty = screenPos.y + scaledFontSize + li * scaledFontSize * 1.3;
+                    svgContent += `  <text x="${screenPos.x}" y="${ty}" fill="${stroke.color}" font-size="${scaledFontSize}" font-family="sans-serif"${opacity}>${lines[li]}</text>\n`;
+                }
                 continue;
             }
 

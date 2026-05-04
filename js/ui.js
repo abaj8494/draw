@@ -224,6 +224,11 @@ const UI = {
             App.triggerAutoSave();
         });
 
+        const resetViewBtn = document.getElementById('reset-view-btn');
+        resetViewBtn.addEventListener('click', () => {
+            Canvas.resetView();
+        });
+
         clearBtn.addEventListener('click', () => {
             if (Canvas.strokes.length === 0) return;
 

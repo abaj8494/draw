@@ -38,6 +38,16 @@ const Tools = {
     shapeStart: null,
     shiftHeld: false,
 
+    // Text tool state
+    textInputActive: false,
+    textCanvasPoint: null,
+
+    // Resize state
+    resizingHandle: null, // which handle is being dragged
+    resizeAnchor: null,   // opposite corner anchor point (canvas coords)
+    resizeStartMouse: null,
+    resizeOriginalBounds: null,
+
     // Right-click pan state
     isRightClickPanning: false,
     rightClickPanStart: null,
@@ -80,6 +90,9 @@ const Tools = {
         if (tool !== 'move') {
             this.clearSelection();
         }
+        if (this.textInputActive) {
+            this.commitTextInput();
+        }
         this.updateCursor();
     },
 
@@ -120,6 +133,9 @@ const Tools = {
                 break;
             case 'move':
                 canvas.classList.add('cursor-move');
+                break;
+            case 'text':
+                canvas.classList.add('cursor-text');
                 break;
             case 'shape':
                 canvas.classList.add('cursor-crosshair');
@@ -174,7 +190,14 @@ const Tools = {
         canvas.addEventListener('mousedown', (e) => this.handleStart(e));
         canvas.addEventListener('mousemove', (e) => this.handleMove(e));
         canvas.addEventListener('mouseup', (e) => this.handleEnd(e));
-        canvas.addEventListener('mouseleave', (e) => this.handleEnd(e));
+        canvas.addEventListener('mouseleave', (e) => {
+            // Hide the laser dot when the mouse leaves the canvas, regardless
+            // of whether a drag was in progress.
+            if (this.currentTool === 'laser-plain' || this.currentTool === 'laser-trail') {
+                this.hideLaser();
+            }
+            this.handleEnd(e);
+        });
 
         // Touch events
         canvas.addEventListener('touchstart', (e) => {
@@ -372,8 +395,20 @@ const Tools = {
 
             case 'move':
                 if (this.selectedStrokes.length > 0) {
-                    this.moveStart = { x: coords.x, y: coords.y };
-                    Canvas.drawCanvas.classList.add('cursor-move-active');
+                    // Check if clicking on a resize handle
+                    const handleId = this.hitTestResizeHandle(coords.x, coords.y);
+                    if (handleId) {
+                        const bounds = this.getSelectionBounds();
+                        this.resizingHandle = handleId;
+                        this.resizeAnchor = this.getResizeAnchor(handleId, bounds);
+                        this.resizeOriginalBounds = { ...bounds };
+                        this.resizeStartMouse = Canvas.toCanvas(coords.x, coords.y);
+                        // Save original stroke data for undo
+                        this._resizeOriginalStrokes = this.selectedStrokes.map(i => JSON.parse(JSON.stringify(Canvas.strokes[i])));
+                    } else {
+                        this.moveStart = { x: coords.x, y: coords.y };
+                        Canvas.drawCanvas.classList.add('cursor-move-active');
+                    }
                 } else {
                     this.isDrawing = false;
                 }
@@ -387,6 +422,14 @@ const Tools = {
                 this.laserTrail = [{ x: coords.x, y: coords.y, time: Date.now() }];
                 this.showLaser(coords.x, coords.y);
                 this.startLaserTrailAnimation();
+                break;
+
+            case 'text':
+                // Prevent the browser's default mousedown focus behavior from
+                // stealing focus away from the textarea after we open it.
+                if (e && e.preventDefault) e.preventDefault();
+                this.showTextInput(coords.x, coords.y);
+                this.isDrawing = false;
                 break;
 
             case 'shape-line':
@@ -405,9 +448,27 @@ const Tools = {
         const coords = this.getCoords(e);
 
         if (!this.isDrawing) {
-            // Only show laser-plain on hover, laser-trail requires mouse down
-            if (this.currentTool === 'laser-plain') {
+            // Show laser pointer on hover for both laser tools so the user
+            // always has a visible cursor (the CSS hides the OS cursor for laser).
+            if (this.currentTool === 'laser-plain' || this.currentTool === 'laser-trail') {
                 this.showLaser(coords.x, coords.y);
+            }
+            // Show resize cursor when hovering over handles
+            if (this.currentTool === 'move' && this.selectedStrokes.length > 0) {
+                const handle = this.hitTestResizeHandle(coords.x, coords.y);
+                const canvas = Canvas.drawCanvas;
+                canvas.className = '';
+                if (handle) {
+                    const cursorMap = {
+                        'nw': 'cursor-resize-nwse', 'se': 'cursor-resize-nwse',
+                        'ne': 'cursor-resize-nesw', 'sw': 'cursor-resize-nesw',
+                        'n': 'cursor-resize-ns', 's': 'cursor-resize-ns',
+                        'e': 'cursor-resize-ew', 'w': 'cursor-resize-ew'
+                    };
+                    canvas.classList.add(cursorMap[handle]);
+                } else {
+                    canvas.classList.add('cursor-move');
+                }
             }
             return;
         }
@@ -446,7 +507,51 @@ const Tools = {
                 break;
 
             case 'move':
-                if (this.moveStart && this.selectedStrokes.length > 0) {
+                if (this.resizingHandle && this.selectedStrokes.length > 0) {
+                    const currentCanvas = Canvas.toCanvas(coords.x, coords.y);
+                    const ob = this.resizeOriginalBounds;
+                    const anchor = this.resizeAnchor;
+                    const handle = this.resizingHandle;
+
+                    // Restore original strokes before applying new scale
+                    for (let si = 0; si < this.selectedStrokes.length; si++) {
+                        const idx = this.selectedStrokes[si];
+                        Canvas.strokes[idx] = JSON.parse(JSON.stringify(this._resizeOriginalStrokes[si]));
+                    }
+
+                    // Compute scale factor based on handle type
+                    let scaleX = 1, scaleY = 1;
+                    const origW = ob.maxX - ob.minX;
+                    const origH = ob.maxY - ob.minY;
+
+                    if (handle === 'n' || handle === 's') {
+                        // Vertical only
+                        const newDistY = Math.abs(currentCanvas.y - anchor.y);
+                        scaleY = origH > 0 ? newDistY / origH : 1;
+                        scaleX = 1;
+                    } else if (handle === 'e' || handle === 'w') {
+                        // Horizontal only
+                        const newDistX = Math.abs(currentCanvas.x - anchor.x);
+                        scaleX = origW > 0 ? newDistX / origW : 1;
+                        scaleY = 1;
+                    } else {
+                        // Corner handles - proportional
+                        const newDistX = Math.abs(currentCanvas.x - anchor.x);
+                        const newDistY = Math.abs(currentCanvas.y - anchor.y);
+                        scaleX = origW > 0 ? newDistX / origW : 1;
+                        scaleY = origH > 0 ? newDistY / origH : 1;
+                        // Use uniform scale for corners
+                        const uniformScale = Math.max(scaleX, scaleY);
+                        scaleX = uniformScale;
+                        scaleY = uniformScale;
+                    }
+
+                    scaleX = Math.max(0.05, scaleX);
+                    scaleY = Math.max(0.05, scaleY);
+
+                    Canvas.resizeStrokes(this.selectedStrokes, anchor.x, anchor.y, scaleX, scaleY);
+                    this.highlightSelection();
+                } else if (this.moveStart && this.selectedStrokes.length > 0) {
                     const mdx = coords.x - this.moveStart.x;
                     const mdy = coords.y - this.moveStart.y;
                     Canvas.moveStrokes(this.selectedStrokes, mdx, mdy);
@@ -534,6 +639,21 @@ const Tools = {
 
             case 'move':
                 Canvas.drawCanvas.classList.remove('cursor-move-active');
+                if (this.resizingHandle) {
+                    // Push undo entry for the resize
+                    Canvas.undoStack.push({
+                        action: 'resize',
+                        indices: [...this.selectedStrokes],
+                        originalStrokes: this._resizeOriginalStrokes
+                    });
+                    Canvas.redoStack = [];
+                    this.resizingHandle = null;
+                    this.resizeAnchor = null;
+                    this.resizeOriginalBounds = null;
+                    this.resizeStartMouse = null;
+                    this._resizeOriginalStrokes = null;
+                    App.triggerAutoSave();
+                }
                 this.moveStart = null;
                 if (this.selectedStrokes.length > 0) {
                     App.triggerAutoSave();
@@ -899,52 +1019,126 @@ const Tools = {
     },
 
     /**
-     * Highlight selected strokes
+     * Get the combined bounding box of selected strokes (canvas coords)
+     */
+    getSelectionBounds() {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        for (const index of this.selectedStrokes) {
+            const stroke = Canvas.strokes[index];
+            if (!stroke) continue;
+            const b = Canvas.getStrokeBounds(stroke);
+            if (!b) continue;
+
+            let padding = 0;
+            if (stroke.type !== 'image' && stroke.type !== 'text' && stroke.size) {
+                padding = stroke.size / 2;
+            }
+            minX = Math.min(minX, b.minX - padding);
+            minY = Math.min(minY, b.minY - padding);
+            maxX = Math.max(maxX, b.maxX + padding);
+            maxY = Math.max(maxY, b.maxY + padding);
+        }
+
+        if (!isFinite(minX)) return null;
+        return { minX, minY, maxX, maxY };
+    },
+
+    /**
+     * Highlight selected strokes and draw resize handles
      */
     highlightSelection() {
         Canvas.redraw();
 
         if (this.selectedStrokes.length === 0) return;
 
+        const bounds = this.getSelectionBounds();
+        if (!bounds) return;
+
         const ctx = Canvas.drawCtx;
         ctx.save();
+
+        // Draw bounding box
+        const topLeft = Canvas.toScreen(bounds.minX, bounds.minY);
+        const bottomRight = Canvas.toScreen(bounds.maxX, bounds.maxY);
+        const w = bottomRight.x - topLeft.x;
+        const h = bottomRight.y - topLeft.y;
+
         ctx.strokeStyle = '#0066cc';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
+        ctx.strokeRect(topLeft.x, topLeft.y, w, h);
+        ctx.setLineDash([]);
 
-        for (const index of this.selectedStrokes) {
-            const stroke = Canvas.strokes[index];
-            if (!stroke) continue;
+        // Draw 8 resize handles
+        const handleSize = 8;
+        const handles = this.getResizeHandlePositions(topLeft.x, topLeft.y, w, h);
+        ctx.fillStyle = '#0066cc';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
 
-            let minX, minY, maxX, maxY, padding;
-
-            if (stroke.type === 'image') {
-                minX = stroke.x;
-                minY = stroke.y;
-                maxX = stroke.x + stroke.width;
-                maxY = stroke.y + stroke.height;
-                padding = 5;
-            } else {
-                minX = Infinity; minY = Infinity;
-                maxX = -Infinity; maxY = -Infinity;
-
-                for (const point of stroke.points) {
-                    minX = Math.min(minX, point.x);
-                    minY = Math.min(minY, point.y);
-                    maxX = Math.max(maxX, point.x);
-                    maxY = Math.max(maxY, point.y);
-                }
-                padding = stroke.size / 2 + 5;
-            }
-
-            const topLeft = Canvas.toScreen(minX - padding, minY - padding);
-            const scaledWidth = (maxX - minX + padding * 2) * Canvas.scale;
-            const scaledHeight = (maxY - minY + padding * 2) * Canvas.scale;
-
-            ctx.strokeRect(topLeft.x, topLeft.y, scaledWidth, scaledHeight);
+        for (const handle of handles) {
+            ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+            ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
         }
 
         ctx.restore();
+    },
+
+    /**
+     * Get positions of 8 resize handles (screen coords)
+     */
+    getResizeHandlePositions(x, y, w, h) {
+        return [
+            { x: x,         y: y,         id: 'nw' },
+            { x: x + w / 2, y: y,         id: 'n'  },
+            { x: x + w,     y: y,         id: 'ne' },
+            { x: x + w,     y: y + h / 2, id: 'e'  },
+            { x: x + w,     y: y + h,     id: 'se' },
+            { x: x + w / 2, y: y + h,     id: 's'  },
+            { x: x,         y: y + h,     id: 'sw' },
+            { x: x,         y: y + h / 2, id: 'w'  },
+        ];
+    },
+
+    /**
+     * Check if a screen point hits a resize handle. Returns handle id or null.
+     */
+    hitTestResizeHandle(screenX, screenY) {
+        if (this.selectedStrokes.length === 0) return null;
+
+        const bounds = this.getSelectionBounds();
+        if (!bounds) return null;
+
+        const topLeft = Canvas.toScreen(bounds.minX, bounds.minY);
+        const bottomRight = Canvas.toScreen(bounds.maxX, bounds.maxY);
+        const w = bottomRight.x - topLeft.x;
+        const h = bottomRight.y - topLeft.y;
+        const handles = this.getResizeHandlePositions(topLeft.x, topLeft.y, w, h);
+
+        const threshold = 8;
+        for (const handle of handles) {
+            if (Math.abs(screenX - handle.x) <= threshold && Math.abs(screenY - handle.y) <= threshold) {
+                return handle.id;
+            }
+        }
+        return null;
+    },
+
+    /**
+     * Get the anchor point (opposite corner) for a given handle
+     */
+    getResizeAnchor(handleId, bounds) {
+        switch (handleId) {
+            case 'nw': return { x: bounds.maxX, y: bounds.maxY };
+            case 'n':  return { x: (bounds.minX + bounds.maxX) / 2, y: bounds.maxY };
+            case 'ne': return { x: bounds.minX, y: bounds.maxY };
+            case 'e':  return { x: bounds.minX, y: (bounds.minY + bounds.maxY) / 2 };
+            case 'se': return { x: bounds.minX, y: bounds.minY };
+            case 's':  return { x: (bounds.minX + bounds.maxX) / 2, y: bounds.minY };
+            case 'sw': return { x: bounds.maxX, y: bounds.minY };
+            case 'w':  return { x: bounds.maxX, y: (bounds.minY + bounds.maxY) / 2 };
+        }
     },
 
     /**
@@ -1009,7 +1203,7 @@ const Tools = {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             const now = Date.now();
-            const fadeTime = 1500; // 1.5 seconds fade
+            const fadeTime = 600; // shorter fade so the trail doesn't stretch across the canvas
 
             // Remove old points
             this.laserTrail = this.laserTrail.filter(p => now - p.time < fadeTime);
@@ -1039,6 +1233,99 @@ const Tools = {
         };
 
         requestAnimationFrame(animate);
+    },
+
+    /**
+     * Show text input overlay at click position
+     */
+    showTextInput(screenX, screenY) {
+        if (this.textInputActive) {
+            this.commitTextInput();
+        }
+
+        const overlay = document.getElementById('text-input-overlay');
+        const canvasPoint = Canvas.toCanvas(screenX, screenY);
+        this.textCanvasPoint = canvasPoint;
+
+        const fontSize = Math.max(12, this.brushSize * 4);
+        overlay.style.left = screenX + 'px';
+        overlay.style.top = screenY + 'px';
+        overlay.style.fontSize = (fontSize * Canvas.scale) + 'px';
+        overlay.style.color = this.brushColor;
+        overlay.value = '';
+        overlay.classList.remove('hidden');
+        overlay.focus();
+
+        this.textInputActive = true;
+
+        // Commit on Enter (without shift), blur
+        const onKeyDown = (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.commitTextInput();
+            } else if (e.key === 'Escape') {
+                this.cancelTextInput();
+            }
+        };
+
+        const onBlur = () => {
+            // Small delay to allow click-away detection
+            setTimeout(() => {
+                if (this.textInputActive) {
+                    this.commitTextInput();
+                }
+            }, 100);
+        };
+
+        overlay.onkeydown = onKeyDown;
+        overlay.onblur = onBlur;
+    },
+
+    /**
+     * Commit text input as a stroke
+     */
+    commitTextInput() {
+        const overlay = document.getElementById('text-input-overlay');
+        const text = overlay.value.trim();
+
+        if (text && this.textCanvasPoint) {
+            const fontSize = Math.max(12, this.brushSize * 4);
+            const stroke = {
+                type: 'text',
+                text: text,
+                x: this.textCanvasPoint.x,
+                y: this.textCanvasPoint.y,
+                fontSize: fontSize,
+                color: this.brushColor,
+                opacity: 1
+            };
+
+            Canvas.strokes.push(stroke);
+            Canvas.undoStack.push({ action: 'add', stroke: stroke });
+            Canvas.redoStack = [];
+            Canvas.redraw();
+            App.triggerAutoSave();
+        }
+
+        overlay.classList.add('hidden');
+        overlay.value = '';
+        overlay.onkeydown = null;
+        overlay.onblur = null;
+        this.textInputActive = false;
+        this.textCanvasPoint = null;
+    },
+
+    /**
+     * Cancel text input without committing
+     */
+    cancelTextInput() {
+        const overlay = document.getElementById('text-input-overlay');
+        overlay.classList.add('hidden');
+        overlay.value = '';
+        overlay.onkeydown = null;
+        overlay.onblur = null;
+        this.textInputActive = false;
+        this.textCanvasPoint = null;
     },
 
     /**
@@ -1097,7 +1384,7 @@ const Tools = {
 
         // Calculate scale change
         const scaleChange = currentDistance / this.initialPinchDistance;
-        const newScale = Math.max(0.25, Math.min(4, this.initialScale * scaleChange));
+        const newScale = this.initialScale * scaleChange;
 
         // Calculate pan to keep pinch center stationary
         const dx = currentCenter.x - this.pinchCenter.x;
