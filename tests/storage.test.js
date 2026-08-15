@@ -216,23 +216,27 @@ test('loadState with a partial object keeps defaults for missing fields', async 
     dom.window.close();
 });
 
-// NOTE: Canvas.loadState() does not validate `background` against
-// Canvas.backgrounds. A persisted state naming a background that no longer
-// exists (renamed/removed preset, hand-edited save file) makes drawBackground()
-// throw "Cannot read properties of undefined (reading 'bg')" and aborts the
-// load. Asserting the actual behaviour here rather than the desired one.
-test('loadState with an unknown background name throws from drawBackground', async () => {
+test('loadState falls back to grid-light for an unknown background name', async () => {
     const dom = await loadApp();
     const Canvas = dom.window.Canvas;
 
-    let message = null;
-    try {
-        Canvas.loadState({ strokes: [], background: 'no-such-background' });
-    } catch (e) {
-        message = e.message;
-    }
-    assert(message !== null, 'unknown background currently throws instead of falling back');
-    assert(/bg/.test(message), `unexpected error: ${message}`);
+    const stroke = { type: 'pencil', points: [{ x: 1, y: 2 }], color: '#000', size: 3, opacity: 1 };
+    Canvas.loadState({ strokes: [stroke], background: 'no-such-background', scale: 2 });
+
+    assertEqual(Canvas.currentBackground, 'grid-light', 'unknown preset must not brick the load');
+    assertEqual(Canvas.strokes.length, 1, 'the rest of the state still loads');
+    assertEqual(Canvas.scale, 2);
+
+    dom.window.close();
+});
+
+test('setBackground ignores an unknown background name', async () => {
+    const dom = await loadApp();
+    const Canvas = dom.window.Canvas;
+
+    Canvas.setBackground('blank-dark');
+    Canvas.setBackground('nope');
+    assertEqual(Canvas.currentBackground, 'blank-dark', 'the previous background is kept');
 
     dom.window.close();
 });

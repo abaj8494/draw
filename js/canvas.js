@@ -735,7 +735,10 @@ const Canvas = {
     loadState(state) {
         if (state) {
             this.strokes = state.strokes || [];
-            this.currentBackground = state.background || 'grid-light';
+            // A save naming a preset we no longer ship must not brick the load.
+            this.currentBackground = this.backgrounds[state.background]
+                ? state.background
+                : 'grid-light';
             this.offsetX = state.offsetX || 0;
             this.offsetY = state.offsetY || 0;
             this.scale = state.scale || 1;
