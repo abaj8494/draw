@@ -214,6 +214,10 @@ const Canvas = {
 
         if (stroke.type === 'highlighter') {
             ctx.globalCompositeOperation = 'multiply';
+        } else if (stroke.type === 'eraser') {
+            // Erasing is a stroke like any other, so it survives a redraw and
+            // can be undone. It only removes content painted before it.
+            ctx.globalCompositeOperation = 'destination-out';
         }
 
         ctx.beginPath();
@@ -352,18 +356,6 @@ const Canvas = {
         }
         this.currentStroke = null;
         return false;
-    },
-
-    /**
-     * Pixel eraser - create eraser stroke with destination-out
-     */
-    pixelErase(x, y, size) {
-        this.drawCtx.save();
-        this.drawCtx.globalCompositeOperation = 'destination-out';
-        this.drawCtx.beginPath();
-        this.drawCtx.arc(x, y, (size * this.scale) / 2, 0, Math.PI * 2);
-        this.drawCtx.fill();
-        this.drawCtx.restore();
     },
 
     /**

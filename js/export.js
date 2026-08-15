@@ -30,33 +30,60 @@ const Export = {
     },
 
     /**
-     * Paint background, grid and every stroke into a context
+     * Paint background, grid and every stroke into a context.
+     *
+     * Strokes go onto their own layer before being composited, mirroring the
+     * app's two-canvas model: an eraser stroke must reveal the background,
+     * not punch a transparent hole through it.
      */
     renderScene(ctx) {
+        this.renderBackground(ctx);
+
+        const dpr = Canvas.dpr || 1;
+        const layer = document.createElement('canvas');
+        layer.width = Canvas.width * dpr;
+        layer.height = Canvas.height * dpr;
+
+        const layerCtx = layer.getContext('2d');
+        layerCtx.scale(dpr, dpr);
+        this.renderStrokes(layerCtx);
+
+        ctx.drawImage(layer, 0, 0, Canvas.width, Canvas.height);
+    },
+
+    /**
+     * Paint the background colour and grid into a context
+     */
+    renderBackground(ctx) {
         const bgConfig = Canvas.backgrounds[Canvas.currentBackground];
 
         ctx.fillStyle = bgConfig.bg;
         ctx.fillRect(0, 0, Canvas.width, Canvas.height);
 
-        if (bgConfig.type === 'grid') {
-            ctx.strokeStyle = bgConfig.line;
-            ctx.lineWidth = 1;
-            const scaledGridSize = Canvas.gridSize * Canvas.scale;
+        if (bgConfig.type !== 'grid') return;
 
-            ctx.beginPath();
-            for (let x = Canvas.offsetX % scaledGridSize; x < Canvas.width; x += scaledGridSize) {
-                const px = Math.round(x) + 0.5;
-                ctx.moveTo(px, 0);
-                ctx.lineTo(px, Canvas.height);
-            }
-            for (let y = Canvas.offsetY % scaledGridSize; y < Canvas.height; y += scaledGridSize) {
-                const py = Math.round(y) + 0.5;
-                ctx.moveTo(0, py);
-                ctx.lineTo(Canvas.width, py);
-            }
-            ctx.stroke();
+        ctx.strokeStyle = bgConfig.line;
+        ctx.lineWidth = 1;
+        const scaledGridSize = Canvas.gridSize * Canvas.scale;
+
+        ctx.beginPath();
+        for (let x = Canvas.offsetX % scaledGridSize; x < Canvas.width; x += scaledGridSize) {
+            const px = Math.round(x) + 0.5;
+            ctx.moveTo(px, 0);
+            ctx.lineTo(px, Canvas.height);
         }
+        for (let y = Canvas.offsetY % scaledGridSize; y < Canvas.height; y += scaledGridSize) {
+            const py = Math.round(y) + 0.5;
+            ctx.moveTo(0, py);
+            ctx.lineTo(Canvas.width, py);
+        }
+        ctx.stroke();
+    },
 
+    /**
+     * Paint every stroke into a context
+     */
+    renderStrokes(ctx) {
         for (const stroke of Canvas.strokes) {
             this.renderStrokeToContext(ctx, stroke);
         }
@@ -87,6 +114,8 @@ const Export = {
 
         if (stroke.type === 'highlighter') {
             ctx.globalCompositeOperation = 'multiply';
+        } else if (stroke.type === 'eraser') {
+            ctx.globalCompositeOperation = 'destination-out';
         }
 
         ctx.beginPath();
@@ -189,43 +218,83 @@ const Export = {
 `;
         }
 
-        // Add strokes
+        // Add strokes.
+        //
+        // Eraser strokes split the drawing into runs: everything painted
+        // before an eraser is masked by it, everything after is not. That
+        // preserves the paint-order semantics of destination-out on canvas.
         svgContent += '\n  <!-- Strokes -->\n';
 
-        for (const stroke of Canvas.strokes) {
-            if (stroke.type === 'image') {
-                const screenPos = Canvas.toScreen(stroke.x, stroke.y);
-                const w = stroke.width * Canvas.scale;
-                const h = stroke.height * Canvas.scale;
-                const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
-                svgContent += `  <image x="${screenPos.x}" y="${screenPos.y}" width="${w}" height="${h}" href="${stroke.src}"${opacity}/>\n`;
-                continue;
-            }
+        const runs = [''];
+        const erasers = [];
 
-            if (stroke.type === 'text') {
-                const screenPos = Canvas.toScreen(stroke.x, stroke.y);
-                const scaledFontSize = stroke.fontSize * Canvas.scale;
-                const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
-                const escapedText = stroke.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const lines = escapedText.split('\n');
-                for (let li = 0; li < lines.length; li++) {
-                    const ty = screenPos.y + scaledFontSize + li * scaledFontSize * 1.3;
-                    svgContent += `  <text x="${screenPos.x}" y="${ty}" fill="${stroke.color}" font-size="${scaledFontSize}" font-family="sans-serif"${opacity}>${lines[li]}</text>\n`;
+        for (const stroke of Canvas.strokes) {
+            if (stroke.type === 'eraser') {
+                if (stroke.points && stroke.points.length > 0) {
+                    erasers.push(stroke);
+                    runs.push('');
                 }
                 continue;
             }
+            runs[runs.length - 1] += this.strokeToSVG(stroke);
+        }
 
-            if (!stroke.points || stroke.points.length === 0) continue;
+        for (let i = 0; i < runs.length; i++) {
+            if (!runs[i]) continue;
 
-            const pathData = this.pointsToSVGPath(stroke.points, stroke.type === 'pen');
-            const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
+            // Every eraser from index i onwards was drawn after this run.
+            const applied = erasers.slice(i);
+            if (applied.length === 0) {
+                svgContent += runs[i];
+                continue;
+            }
 
-            svgContent += `  <path class="stroke" d="${pathData}" stroke="${stroke.color}" stroke-width="${stroke.size * Canvas.scale}"${opacity}/>\n`;
+            const maskId = `erase-${i}`;
+            svgContent += `  <defs>\n    <mask id="${maskId}" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">\n`;
+            svgContent += `      <rect width="${width}" height="${height}" fill="white"/>\n`;
+            for (const eraser of applied) {
+                const d = this.pointsToSVGPath(eraser.points);
+                svgContent += `      <path d="${d}" stroke="black" stroke-width="${eraser.size * Canvas.scale}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>\n`;
+            }
+            svgContent += '    </mask>\n  </defs>\n';
+            svgContent += `  <g mask="url(#${maskId})">\n${runs[i]}  </g>\n`;
         }
 
         svgContent += '</svg>';
 
         return svgContent;
+    },
+
+    /**
+     * Markup for a single non-eraser stroke
+     */
+    strokeToSVG(stroke) {
+        const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
+
+        if (stroke.type === 'image') {
+            const screenPos = Canvas.toScreen(stroke.x, stroke.y);
+            const w = stroke.width * Canvas.scale;
+            const h = stroke.height * Canvas.scale;
+            return `  <image x="${screenPos.x}" y="${screenPos.y}" width="${w}" height="${h}" href="${stroke.src}"${opacity}/>\n`;
+        }
+
+        if (stroke.type === 'text') {
+            const screenPos = Canvas.toScreen(stroke.x, stroke.y);
+            const scaledFontSize = stroke.fontSize * Canvas.scale;
+            const escapedText = stroke.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const lines = escapedText.split('\n');
+            let markup = '';
+            for (let li = 0; li < lines.length; li++) {
+                const ty = screenPos.y + scaledFontSize + li * scaledFontSize * 1.3;
+                markup += `  <text x="${screenPos.x}" y="${ty}" fill="${stroke.color}" font-size="${scaledFontSize}" font-family="sans-serif"${opacity}>${lines[li]}</text>\n`;
+            }
+            return markup;
+        }
+
+        if (!stroke.points || stroke.points.length === 0) return '';
+
+        const pathData = this.pointsToSVGPath(stroke.points, stroke.type === 'pen');
+        return `  <path class="stroke" d="${pathData}" stroke="${stroke.color}" stroke-width="${stroke.size * Canvas.scale}"${opacity}/>\n`;
     },
 
     /**

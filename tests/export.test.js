@@ -31,7 +31,7 @@ const pencil = (points, extra) => Object.assign({
     type: 'pencil', points, color: '#123456', size: 4, opacity: 1,
 }, extra);
 
-test('renderScene paints the background then every stroke', async () => {
+test('renderScene paints the background then composites the stroke layer', async () => {
     const dom = await loadApp();
     const { window } = dom;
     const Canvas = window.Canvas;
@@ -50,7 +50,28 @@ test('renderScene paints the background then every stroke', async () => {
     assertEqual(fills.length, 1, 'background should be filled exactly once');
     assertEqual(fills[0].args[2], Canvas.width);
     assertEqual(fills[0].args[3], Canvas.height);
-    // Two strokes, each ending in a stroke() call.
+
+    // Strokes live on their own layer so erasing reveals the background
+    // instead of punching a hole through it.
+    assertEqual(ctx.find('drawImage').length, 1, 'stroke layer should be composited');
+
+    dom.window.close();
+});
+
+test('renderStrokes paints every stroke', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    const Canvas = window.Canvas;
+    const Export = window.Export;
+
+    Canvas.strokes = [
+        pencil([{ x: 0, y: 0 }, { x: 10, y: 10 }]),
+        pencil([{ x: 20, y: 20 }, { x: 30, y: 30 }]),
+    ];
+
+    const ctx = recordingCtx();
+    Export.renderStrokes(ctx);
+
     assert(ctx.find('stroke').length >= 2, 'each stroke should be painted');
 
     dom.window.close();

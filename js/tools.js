@@ -384,7 +384,7 @@ const Tools = {
                 break;
 
             case 'eraser-pixel':
-                Canvas.pixelErase(coords.x, coords.y, this.brushSize * 2);
+                Canvas.startStroke('eraser', coords.x, coords.y, '#000000', this.brushSize * 2);
                 break;
 
             case 'eraser-object':
@@ -496,7 +496,7 @@ const Tools = {
                 break;
 
             case 'eraser-pixel':
-                Canvas.pixelErase(coords.x, coords.y, this.brushSize * 2);
+                Canvas.addPoint(coords.x, coords.y);
                 break;
 
             case 'eraser-object':
@@ -622,6 +622,11 @@ const Tools = {
                 break;
 
             case 'eraser-pixel':
+                if (Canvas.endStroke()) {
+                    App.triggerAutoSave();
+                }
+                break;
+
             case 'eraser-object':
                 App.triggerAutoSave();
                 break;
