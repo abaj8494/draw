@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SRC_DIR = path.join(__dirname, '..', 'js');
-const SRC_FILES = ['storage.js', 'canvas.js', 'tools.js', 'export.js', 'ui.js', 'app.js'];
+const SRC_FILES = ['storage.js', 'canvas.js', 'video.js', 'tools.js', 'export.js', 'ui.js', 'app.js'];
 
 const stubCtx = () => ({
     clearRect() {}, save() {}, restore() {}, beginPath() {},
@@ -34,7 +34,7 @@ async function loadApp() {
         .join('\n')
         + '\nwindow.Tools = Tools; window.Canvas = Canvas;'
         + ' window.UI = UI; window.App = App; window.Storage = Storage;'
-        + ' window.Export = Export;'
+        + ' window.Export = Export; window.Video = Video;'
         + ' window.__appReady = true;';
 
     const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8')
