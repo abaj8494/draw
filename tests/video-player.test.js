@@ -419,3 +419,56 @@ test('transport calls are safe once the player is gone', async () => {
 
     dom.window.close();
 });
+
+// ---------------------------------------------------------------------- label
+
+test('the miniplayer names the video by title when the API provides one', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = makeFakePlayer({ duration: 100 });
+    fake.getVideoData = () => ({ title: 'But what is a neural network?' });
+    Video.playerFactory = makeFactory(fake);
+    Video.embed(URL_A);
+
+    assertEqual(el(dom, 'video-label').textContent, 'But what is a neural network?');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('the miniplayer falls back to the video id when no title is available', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    embedWithFake(dom.window, {});
+
+    assertEqual(el(dom, 'video-label').textContent, 'dQw4w9WgXcQ');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('a throwing getVideoData does not break the label', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = makeFakePlayer({ duration: 100 });
+    fake.getVideoData = () => { throw new Error('not ready'); };
+    Video.playerFactory = makeFactory(fake);
+    Video.embed(URL_A);
+
+    assertEqual(el(dom, 'video-label').textContent, 'dQw4w9WgXcQ');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('teardown restores the default label', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    embedWithFake(dom.window, {});
+    assertEqual(el(dom, 'video-label').textContent, 'dQw4w9WgXcQ');
+
+    Video.teardown();
+    assertEqual(el(dom, 'video-label').textContent, 'Video');
+
+    dom.window.close();
+});

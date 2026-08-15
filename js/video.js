@@ -327,7 +327,14 @@ const Video = {
                 start: stroke.start || 0
             },
             events: {
-                onReady: () => this.onPlayerReady(),
+                onReady: (event) => {
+                    // onReady can fire before the constructor returns, so adopt
+                    // the player from the event rather than waiting for the
+                    // assignment below.
+                    if (!this.player && event && event.target) this.player = event.target;
+                    this.currentVideoId = stroke.videoId;
+                    this.onPlayerReady();
+                },
                 onStateChange: () => this.onPlayerStateChange()
             }
         };
@@ -348,8 +355,29 @@ const Video = {
 
     onPlayerReady() {
         this.setTransportEnabled(true);
+        this.updateLabel();
         this.startTick();
         this.updateTransport();
+    },
+
+    /**
+     * Name the video in the miniplayer, so it is clear what is being
+     * annotated. Falls back to the id when the API cannot tell us the title.
+     */
+    updateLabel() {
+        const label = document.getElementById('video-label');
+        if (!label) return;
+
+        let title = '';
+        if (this.player && typeof this.player.getVideoData === 'function') {
+            try {
+                const data = this.player.getVideoData();
+                title = (data && data.title) || '';
+            } catch (e) { /* the API is not ready yet */ }
+        }
+
+        label.textContent = title || this.currentVideoId || 'Video';
+        label.title = label.textContent;
     },
 
     onPlayerStateChange() {
@@ -535,6 +563,11 @@ const Video = {
         if (durationEl) durationEl.textContent = '0:00';
         const rate = document.getElementById('video-rate');
         if (rate) rate.textContent = '1×';
+        const label = document.getElementById('video-label');
+        if (label) {
+            label.textContent = 'Video';
+            label.title = '';
+        }
     },
 
     startTick() {

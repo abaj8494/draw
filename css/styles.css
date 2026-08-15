@@ -741,10 +741,6 @@ canvas {
     fill: white;
 }
 
-.vp-btn:hover:not(:disabled) .vp-skip {
-    color: white;
-}
-
 .vp-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -754,18 +750,6 @@ canvas {
     width: 18px;
     height: 18px;
     fill: #333;
-}
-
-/* The "10" sits inside the circular arrow of the skip icons */
-.vp-skip {
-    position: absolute;
-    font-size: 8px;
-    font-weight: 700;
-    color: #333;
-    top: 52%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
 }
 
 .vp-rate {
