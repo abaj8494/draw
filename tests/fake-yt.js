@@ -21,6 +21,15 @@ function makeFakePlayer(options = {}) {
         state: options.state === undefined ? PAUSED : options.state,
         rate: options.rate || 1,
         videoId: options.videoId || null,
+        muted: options.muted || false,
+        // Loaded player modules, e.g. 'captions'. The captions module is only
+        // listed by getOptions() once it has been loaded.
+        modules: (options.modules || []).slice(),
+        moduleName: options.moduleName || 'captions',
+        trackList: options.trackList === undefined
+            ? [{ languageCode: 'en' }, { languageCode: 'fr' }]
+            : options.trackList,
+        track: {},
 
         record(name, ...args) {
             this.calls.push(args.length ? `${name}:${args.join(':')}` : name);
@@ -47,6 +56,33 @@ function makeFakePlayer(options = {}) {
             this.videoId = id;
             this.currentTime = start;
         },
+        mute() { this.record('mute'); this.muted = true; },
+        unMute() { this.record('unMute'); this.muted = false; },
+        isMuted() { return this.muted; },
+
+        loadModule(name) {
+            this.record('loadModule', name);
+            if (this.modules.indexOf(name) === -1) this.modules.push(name);
+        },
+        unloadModule(name) {
+            this.record('unloadModule', name);
+            this.modules = this.modules.filter(m => m !== name);
+        },
+        getOptions(module) {
+            if (module === undefined) return this.modules.slice();
+            return module === this.moduleName ? ['track', 'tracklist'] : [];
+        },
+        setOption(module, option, value) {
+            this.record('setOption', module, option, JSON.stringify(value));
+            if (option === 'track') this.track = value || {};
+        },
+        getOption(module, option) {
+            if (module !== this.moduleName) return undefined;
+            if (option === 'track') return this.track;
+            if (option === 'tracklist') return this.trackList;
+            return undefined;
+        },
+
         destroy() { this.record('destroy'); this.destroyed = true; },
         getIframe() { return null; },
     };

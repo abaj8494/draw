@@ -472,3 +472,244 @@ test('teardown restores the default label', async () => {
 
     dom.window.close();
 });
+
+// ------------------------------------------------------------------ mute
+
+test('the mute button mutes and unmutes', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, {});
+    const button = el(dom, 'video-mute');
+
+    assertEqual(Video.isMuted(), false, 'starts unmuted');
+
+    button.click();
+    assertEqual(fake.called('mute').length, 1);
+    assertEqual(Video.isMuted(), true);
+
+    button.click();
+    assertEqual(fake.called('unMute').length, 1);
+    assertEqual(Video.isMuted(), false);
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('the mute button reflects the muted state', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    embedWithFake(dom.window, {});
+    const button = el(dom, 'video-mute');
+
+    assert(!button.classList.contains('vp-active'), 'not highlighted while audible');
+    assertEqual(button.title, 'Mute');
+
+    button.click();
+    assert(button.classList.contains('vp-active'), 'highlighted while muted');
+    assertEqual(button.title, 'Unmute');
+
+    button.click();
+    assert(!button.classList.contains('vp-active'));
+    assertEqual(button.title, 'Mute');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('a player that starts muted is shown as muted', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    embedWithFake(dom.window, { muted: true });
+
+    assertEqual(Video.isMuted(), true);
+    assert(el(dom, 'video-mute').classList.contains('vp-active'));
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('muting is a no-op with no player', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+
+    assertEqual(Video.toggleMute(), false);
+    assertEqual(Video.isMuted(), false);
+
+    dom.window.close();
+});
+
+// -------------------------------------------------------------- captions
+
+test('the captions button turns captions on and off', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, {});
+    const button = el(dom, 'video-cc');
+
+    assertEqual(Video.captionsOn, false, 'off by default');
+
+    button.click();
+    assertEqual(Video.captionsOn, true);
+    assert(fake.calls.includes('loadModule:captions'), 'the module is loaded on demand');
+    assertEqual(fake.track.languageCode, 'en', 'a track is selected');
+
+    button.click();
+    assertEqual(Video.captionsOn, false);
+    assertEqual(fake.calls.includes('unloadModule:captions'), true);
+    assertEqual(Object.keys(fake.track).length, 0, 'the track is cleared');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('the captions button reflects the caption state', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    embedWithFake(dom.window, {});
+    const button = el(dom, 'video-cc');
+
+    assert(!button.classList.contains('vp-active'));
+    assertEqual(button.title, 'Show captions');
+
+    button.click();
+    assert(button.classList.contains('vp-active'));
+    assertEqual(button.title, 'Hide captions');
+
+    button.click();
+    assert(!button.classList.contains('vp-active'));
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('captions use the first track the player offers', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { trackList: [{ languageCode: 'de' }, { languageCode: 'en' }] });
+
+    Video.toggleCaptions();
+    assertEqual(fake.track.languageCode, 'de');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('captions do not force a track when the player lists none', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { trackList: [] });
+
+    Video.toggleCaptions();
+
+    // Naming a languageCode the video does not have selects nothing at all,
+    // so loading the module and letting the player pick is the safer move.
+    assertEqual(Video.captionsOn, true);
+    assert(fake.calls.includes('loadModule:captions'));
+    assertEqual(fake.calls.some(c => c.startsWith('setOption') && c.includes('languageCode')), false,
+        'no track should be forced: ' + fake.calls.join(','));
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('captions work on a player that names the module cc', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = makeFakePlayer({ moduleName: 'cc' });
+    Video.playerFactory = makeFactory(fake);
+    Video.embed(URL_A);
+
+    Video.toggleCaptions();
+
+    assertEqual(Video.captionsOn, true);
+    assert(fake.calls.some(c => c.startsWith('setOption:cc:track')), 'the cc module is addressed: ' + fake.calls.join(','));
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('captions are a no-op with no player', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+
+    assertEqual(Video.toggleCaptions(), false);
+    assertEqual(Video.captionsOn, false);
+
+    dom.window.close();
+});
+
+test('a player with no captions API does not throw', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = makeFakePlayer({});
+    delete fake.getOptions;
+    delete fake.loadModule;
+    delete fake.unloadModule;
+    delete fake.setOption;
+    delete fake.getOption;
+    Video.playerFactory = makeFactory(fake);
+    Video.embed(URL_A);
+
+    Video.toggleCaptions();
+    assertEqual(Video.captionsOn, true, 'state still tracks the user intent');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('captions reset when a different video is loaded', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    embedWithFake(dom.window, {});
+
+    Video.toggleCaptions();
+    assertEqual(Video.captionsOn, true);
+
+    Video.embed('https://youtu.be/aBcDeFgHiJk');
+
+    assertEqual(Video.captionsOn, false, 'captions do not carry across videos');
+    assert(!el(dom, 'video-cc').classList.contains('vp-active'));
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('both new controls are disabled until a player is ready', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+
+    assertEqual(el(dom, 'video-cc').disabled, true);
+    assertEqual(el(dom, 'video-mute').disabled, true);
+
+    embedWithFake(dom.window, {});
+
+    assertEqual(el(dom, 'video-cc').disabled, false);
+    assertEqual(el(dom, 'video-mute').disabled, false);
+
+    Video.teardown();
+
+    assertEqual(el(dom, 'video-cc').disabled, true, 'disabled again once the video is gone');
+    assertEqual(el(dom, 'video-mute').disabled, true);
+
+    dom.window.close();
+});
+
+test('teardown resets the caption and mute chrome', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    embedWithFake(dom.window, {});
+
+    Video.toggleCaptions();
+    Video.toggleMute();
+    assert(el(dom, 'video-cc').classList.contains('vp-active'));
+    assert(el(dom, 'video-mute').classList.contains('vp-active'));
+
+    Video.teardown();
+
+    assertEqual(Video.captionsOn, false);
+    assert(!el(dom, 'video-cc').classList.contains('vp-active'));
+    assert(!el(dom, 'video-mute').classList.contains('vp-active'));
+    assertEqual(el(dom, 'video-mute').title, 'Mute');
+
+    dom.window.close();
+});

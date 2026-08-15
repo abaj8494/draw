@@ -663,7 +663,7 @@ canvas {
     top: 16px;
     right: 16px;
     z-index: 90;
-    width: 240px;
+    width: 304px;
     padding: 8px 10px 10px;
     background: rgba(255, 255, 255, 0.95);
     border-radius: 8px;
@@ -746,6 +746,16 @@ canvas {
     cursor: not-allowed;
 }
 
+/* Captions on, or audio muted */
+.vp-btn.vp-active {
+    background: #333;
+    border-color: #333;
+}
+
+.vp-btn.vp-active svg {
+    fill: white;
+}
+
 .vp-btn svg {
     width: 18px;
     height: 18px;
@@ -815,14 +825,22 @@ canvas {
     }
 
     #video-miniplayer {
-        width: 190px;
+        width: 232px;
         top: 8px;
         right: 8px;
         padding: 6px 8px 8px;
     }
 
+    #video-miniplayer .vp-row {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
     #video-miniplayer .vp-time {
         font-size: 11px;
+        order: 10;
+        flex-basis: 100%;
+        margin-top: 4px;
     }
 
     .toolbar {

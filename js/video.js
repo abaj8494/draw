@@ -16,9 +16,17 @@ const Video = {
     TICK_MS: 250,
     PLAYING: 1, // YT.PlayerState.PLAYING
 
+    // The captions module is named 'captions' on the HTML5 player, but older
+    // players expose it as 'cc'. Probe for whichever this one answers to.
+    CAPTION_MODULES: ['captions', 'cc'],
+
+    ICON_SOUND: '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
+    ICON_MUTED: '<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>',
+
     player: null,
     isScrubbing: false,
     tickTimer: null,
+    captionsOn: false,
     // Test seam: (targetEl, opts) => player. When set, the network is never
     // touched and player creation is synchronous.
     playerFactory: null,
@@ -210,10 +218,13 @@ const Video = {
     mountVideo(stroke) {
         if (this.player && typeof this.player.loadVideoById === 'function') {
             this.currentVideoId = stroke.videoId;
+            // Captions do not carry across to a different video.
+            this.captionsOn = false;
             this.player.loadVideoById({
                 videoId: stroke.videoId,
                 startSeconds: stroke.start || 0
             });
+            this.updateTransport();
             return;
         }
 
@@ -493,6 +504,115 @@ const Video = {
         this.updateTransport();
     },
 
+    /**
+     * Mute or unmute. The embedded player's own volume control is unreachable
+     * under the drawing canvas, so this is the only way to silence it.
+     */
+    toggleMute() {
+        if (!this.player) return false;
+
+        const muted = this.isMuted();
+        if (muted && typeof this.player.unMute === 'function') this.player.unMute();
+        else if (!muted && typeof this.player.mute === 'function') this.player.mute();
+
+        this.updateTransport();
+        return this.isMuted();
+    },
+
+    isMuted() {
+        return !!this.player
+            && typeof this.player.isMuted === 'function'
+            && this.player.isMuted() === true;
+    },
+
+    /**
+     * Which name this player answers to for the captions module, or null when
+     * it exposes no captions API at all.
+     */
+    captionModule() {
+        if (!this.player || typeof this.player.getOptions !== 'function') return null;
+
+        for (const name of this.CAPTION_MODULES) {
+            let options;
+            try {
+                options = this.player.getOptions(name);
+            } catch (e) {
+                continue;
+            }
+            if (options && options.length) return name;
+        }
+        return null;
+    },
+
+    /**
+     * The first caption track the player lists, or null when it lists none.
+     *
+     * Null matters: forcing a languageCode the video does not have selects
+     * nothing at all, which is worse than letting the player choose its own
+     * default track.
+     */
+    captionTrack(module) {
+        if (typeof this.player.getOption !== 'function') return null;
+
+        let tracks;
+        try {
+            tracks = this.player.getOption(module, 'tracklist');
+        } catch (e) {
+            return null;
+        }
+        if (tracks && tracks.length && tracks[0].languageCode) {
+            return { languageCode: tracks[0].languageCode };
+        }
+        return null;
+    },
+
+    toggleCaptions() {
+        if (!this.player) return false;
+        this.setCaptions(!this.captionsOn);
+        return this.captionsOn;
+    },
+
+    /**
+     * Turn captions on or off.
+     *
+     * The captions module is not loaded until it is asked for, so turning them
+     * on has to load it first; getOptions() reports nothing before that.
+     */
+    setCaptions(on) {
+        if (!this.player) return false;
+
+        const canLoad = typeof this.player.loadModule === 'function';
+
+        if (on) {
+            // Loading the module is what actually turns captions on; the
+            // player picks its own default track.
+            if (canLoad) this.player.loadModule(this.CAPTION_MODULES[0]);
+
+            const module = this.captionModule();
+            if (module && module !== this.CAPTION_MODULES[0] && canLoad) {
+                this.player.loadModule(module);
+            }
+
+            // Only name a track when the player has told us what it has.
+            const track = module ? this.captionTrack(module) : null;
+            if (track && typeof this.player.setOption === 'function') {
+                this.player.setOption(module, 'track', track);
+            }
+        } else {
+            const module = this.captionModule() || this.CAPTION_MODULES[0];
+            if (typeof this.player.setOption === 'function') {
+                this.player.setOption(module, 'track', {});
+            }
+            if (canLoad && typeof this.player.unloadModule === 'function') {
+                this.player.unloadModule(module);
+            }
+        }
+
+        this.captionsOn = on;
+        this.updateTransport();
+        return this.captionsOn;
+    },
+
     isPlaying() {
         return !!this.player
             && typeof this.player.getPlayerState === 'function'
@@ -546,6 +666,20 @@ const Video = {
         if (rate && typeof this.player.getPlaybackRate === 'function') {
             rate.textContent = this.player.getPlaybackRate() + '×';
         }
+
+        const mute = document.getElementById('video-mute');
+        if (mute) {
+            const muted = this.isMuted();
+            mute.classList.toggle('vp-active', muted);
+            mute.title = muted ? 'Unmute' : 'Mute';
+            mute.innerHTML = muted ? this.ICON_MUTED : this.ICON_SOUND;
+        }
+
+        const captions = document.getElementById('video-cc');
+        if (captions) {
+            captions.classList.toggle('vp-active', this.captionsOn);
+            captions.title = this.captionsOn ? 'Hide captions' : 'Show captions';
+        }
     },
 
     /**
@@ -553,7 +687,20 @@ const Video = {
      */
     resetTransport() {
         this.isScrubbing = false;
+        this.captionsOn = false;
         this.setTransportEnabled(false);
+
+        const mute = document.getElementById('video-mute');
+        if (mute) {
+            mute.classList.remove('vp-active');
+            mute.innerHTML = this.ICON_SOUND;
+            mute.title = 'Mute';
+        }
+        const captions = document.getElementById('video-cc');
+        if (captions) {
+            captions.classList.remove('vp-active');
+            captions.title = 'Show captions';
+        }
 
         const scrubber = document.getElementById('video-scrubber');
         if (scrubber) scrubber.value = '0';
@@ -587,7 +734,10 @@ const Video = {
     },
 
     setTransportEnabled(enabled) {
-        const ids = ['video-back10', 'video-playpause', 'video-fwd10', 'video-rate', 'video-scrubber'];
+        const ids = [
+            'video-back10', 'video-playpause', 'video-fwd10',
+            'video-cc', 'video-mute', 'video-rate', 'video-scrubber',
+        ];
         for (const id of ids) {
             const el = document.getElementById(id);
             if (el) el.disabled = !enabled;
@@ -637,6 +787,8 @@ const Video = {
         on('video-back10', 'click', () => this.skip(-this.SKIP_SECONDS));
         on('video-fwd10', 'click', () => this.skip(this.SKIP_SECONDS));
         on('video-playpause', 'click', () => this.togglePlay());
+        on('video-cc', 'click', () => this.toggleCaptions());
+        on('video-mute', 'click', () => this.toggleMute());
         on('video-rate', 'click', () => this.cyclePlaybackRate());
         on('video-scrubber', 'input', () => this.onScrubInput());
         on('video-scrubber', 'change', () => this.onScrubChange());
