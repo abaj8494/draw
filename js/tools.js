@@ -290,6 +290,9 @@ const Tools = {
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
+            // Never steal keys from a field the user is typing into.
+            if (this.isTypingTarget(e)) return;
+
             if (e.ctrlKey || e.metaKey) {
                 if (e.key === 'z') {
                     e.preventDefault();
@@ -314,6 +317,18 @@ const Tools = {
         document.addEventListener('paste', (e) => {
             this.handlePaste(e);
         });
+    },
+
+    /**
+     * True when an event originated from a field the user is typing into.
+     * Canvas shortcuts (undo, delete selection) must not fire in that case.
+     */
+    isTypingTarget(e) {
+        const target = e && e.target;
+        if (!target) return false;
+        if (target.isContentEditable === true) return true;
+        const tag = target.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
     },
 
     /**
