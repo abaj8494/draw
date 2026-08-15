@@ -284,6 +284,115 @@ test('buildSVG scales stroke width with the zoom level', async () => {
     dom.window.close();
 });
 
+test('an embedded video exports as a vector placeholder, not a remote image', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    const Canvas = window.Canvas;
+    const Export = window.Export;
+
+    Canvas.currentBackground = 'blank-light';
+    Canvas.strokes = [
+        { type: 'video', videoId: 'dQw4w9WgXcQ', x: 100, y: 50, width: 640, height: 360, start: 0, opacity: 1 },
+    ];
+
+    const ctx = recordingCtx();
+    Export.renderStrokes(ctx);
+
+    const rects = ctx.find('fillRect');
+    assertEqual(rects.length, 1, 'the video box is filled');
+    assertEqual(rects[0].args[0], 100);
+    assertEqual(rects[0].args[1], 50);
+    assertEqual(rects[0].args[2], 640);
+    assertEqual(rects[0].args[3], 360);
+
+    // A play triangle rather than a fetched poster frame, which would taint
+    // the canvas and break toDataURL for the whole export.
+    assert(ctx.find('closePath').length === 1, 'play triangle drawn');
+    assert(ctx.find('drawImage').length === 0, 'no remote image is fetched');
+
+    const captions = ctx.find('fillText');
+    assertEqual(captions.length, 1);
+    assert(captions[0].args[0].includes('dQw4w9WgXcQ'));
+
+    dom.window.close();
+});
+
+test('the video placeholder tracks pan and zoom in exports', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    const Canvas = window.Canvas;
+    const Export = window.Export;
+
+    Canvas.scale = 2;
+    Canvas.offsetX = 30;
+    Canvas.offsetY = -10;
+    Canvas.strokes = [
+        { type: 'video', videoId: 'dQw4w9WgXcQ', x: 100, y: 50, width: 640, height: 360, start: 0, opacity: 1 },
+    ];
+
+    const ctx = recordingCtx();
+    Export.renderStrokes(ctx);
+
+    const rect = ctx.find('fillRect')[0];
+    assertEqual(rect.args[0], 230);
+    assertEqual(rect.args[1], 90);
+    assertEqual(rect.args[2], 1280);
+    assertEqual(rect.args[3], 720);
+
+    dom.window.close();
+});
+
+test('buildSVG emits a linked placeholder for an embedded video', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    const Canvas = window.Canvas;
+    const Export = window.Export;
+
+    Canvas.currentBackground = 'blank-light';
+    Canvas.strokes = [
+        { type: 'video', videoId: 'dQw4w9WgXcQ', x: 0, y: 0, width: 640, height: 360, start: 0, opacity: 1 },
+    ];
+
+    const svg = Export.buildSVG();
+
+    assert(svg.includes('<rect x="0" y="0" width="640" height="360" fill="#000000"/>'));
+    assert(svg.includes('<polygon '), 'play triangle');
+    assert(svg.includes('href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"'), 'the link survives export');
+    assert(!svg.includes('img.youtube.com'), 'no remote asset is referenced');
+
+    dom.window.close();
+});
+
+test('exporting a drawing that contains a video does not throw', async () => {
+    const dom = await loadApp();
+    const { window, window: { document } } = dom;
+    const Canvas = window.Canvas;
+    const Export = window.Export;
+
+    Canvas.strokes = [
+        { type: 'video', videoId: 'dQw4w9WgXcQ', x: 0, y: 0, width: 640, height: 360, start: 0, opacity: 1 },
+        pencil([{ x: 10, y: 10 }, { x: 50, y: 50 }]),
+    ];
+
+    const downloads = [];
+    const originalCreate = document.createElement.bind(document);
+    document.createElement = function(tag) {
+        const el = originalCreate(tag);
+        if (tag === 'a') el.click = () => downloads.push(el.download);
+        return el;
+    };
+    window.URL.createObjectURL = () => 'blob:fake';
+    window.URL.revokeObjectURL = () => {};
+
+    Export.toPNG();
+    Export.toSVG();
+
+    assertEqual(downloads.length, 2);
+
+    document.createElement = originalCreate;
+    dom.window.close();
+});
+
 test('toSVG downloads the document built by buildSVG', async () => {
     const dom = await loadApp();
     const { window, window: { document } } = dom;

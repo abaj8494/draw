@@ -93,6 +93,11 @@ const Export = {
      * Render a stroke to a given context
      */
     renderStrokeToContext(ctx, stroke) {
+        if (stroke && stroke.type === 'video') {
+            this.renderVideoPlaceholder(ctx, stroke);
+            return;
+        }
+
         if (stroke && stroke.type === 'image') {
             this.renderImageToContext(ctx, stroke);
             return;
@@ -171,6 +176,50 @@ const Export = {
         ctx.globalAlpha = stroke.opacity;
         ctx.drawImage(img, topLeft.x, topLeft.y, w, h);
         ctx.restore();
+    },
+
+    /**
+     * Draw a stand-in for an embedded video.
+     *
+     * Deliberately vector rather than the real poster frame: fetching
+     * img.youtube.com would taint the canvas and make toDataURL throw, which
+     * would break PNG and PDF export for every drawing containing a video.
+     */
+    renderVideoPlaceholder(ctx, stroke) {
+        const topLeft = Canvas.toScreen(stroke.x, stroke.y);
+        const w = stroke.width * Canvas.scale;
+        const h = stroke.height * Canvas.scale;
+
+        ctx.save();
+        ctx.globalAlpha = stroke.opacity === undefined ? 1 : stroke.opacity;
+
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(topLeft.x, topLeft.y, w, h);
+
+        // Play triangle, centred
+        const size = Math.min(w, h) * 0.25;
+        const cx = topLeft.x + w / 2;
+        const cy = topLeft.y + h / 2;
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.moveTo(cx - size / 2, cy - size);
+        ctx.lineTo(cx - size / 2, cy + size);
+        ctx.lineTo(cx + size, cy);
+        ctx.closePath();
+        ctx.fill();
+
+        const fontSize = Math.max(10, Math.min(16, h * 0.06));
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(this.videoWatchUrl(stroke), cx, cy + size + fontSize);
+
+        ctx.restore();
+    },
+
+    videoWatchUrl(stroke) {
+        return `https://www.youtube.com/watch?v=${stroke.videoId}`;
     },
 
     /**
@@ -270,6 +319,24 @@ const Export = {
      */
     strokeToSVG(stroke) {
         const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
+
+        if (stroke.type === 'video') {
+            const pos = Canvas.toScreen(stroke.x, stroke.y);
+            const w = stroke.width * Canvas.scale;
+            const h = stroke.height * Canvas.scale;
+            const size = Math.min(w, h) * 0.25;
+            const cx = pos.x + w / 2;
+            const cy = pos.y + h / 2;
+            const fontSize = Math.max(10, Math.min(16, h * 0.06));
+            const url = this.videoWatchUrl(stroke);
+
+            // A link beats a raster stand-in: it survives into the exported file.
+            return `  <g${opacity}>\n`
+                + `    <rect x="${pos.x}" y="${pos.y}" width="${w}" height="${h}" fill="#000000"/>\n`
+                + `    <polygon points="${cx - size / 2},${cy - size} ${cx - size / 2},${cy + size} ${cx + size},${cy}" fill="#ff0000"/>\n`
+                + `    <a href="${url}"><text x="${cx}" y="${cy + size + fontSize * 2}" fill="#ffffff" font-size="${fontSize}" font-family="sans-serif" text-anchor="middle">${url}</text></a>\n`
+                + '  </g>\n';
+        }
 
         if (stroke.type === 'image') {
             const screenPos = Canvas.toScreen(stroke.x, stroke.y);
