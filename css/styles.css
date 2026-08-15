@@ -668,7 +668,7 @@ canvas {
     top: 16px;
     right: 16px;
     z-index: 90;
-    width: 304px;
+    width: 268px;
     padding: 8px 10px 10px;
     background: rgba(255, 255, 255, 0.95);
     border-radius: 8px;
@@ -720,6 +720,17 @@ canvas {
     display: flex;
     align-items: center;
     gap: 4px;
+}
+
+/* Seven skip/play buttons do not fit beside the readout, so transport gets
+   its own row with the fine steps nearest play. */
+#video-miniplayer .vp-transport {
+    justify-content: center;
+    gap: 3px;
+}
+
+#video-miniplayer .vp-meta {
+    margin-top: 6px;
 }
 
 .vp-btn {
@@ -834,22 +845,22 @@ canvas {
     }
 
     #video-miniplayer {
-        width: 232px;
+        width: 218px;
         top: 8px;
         right: 8px;
         padding: 6px 8px 8px;
     }
 
-    #video-miniplayer .vp-row {
-        flex-wrap: wrap;
-        justify-content: center;
+    #video-miniplayer .vp-transport {
+        gap: 2px;
+    }
+
+    #video-miniplayer .vp-btn {
+        width: 26px;
     }
 
     #video-miniplayer .vp-time {
         font-size: 11px;
-        order: 10;
-        flex-basis: 100%;
-        margin-top: 4px;
     }
 
     .toolbar {

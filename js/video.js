@@ -12,7 +12,9 @@ const Video = {
     API_SRC: 'https://www.youtube.com/iframe_api',
     HOST: 'https://www.youtube-nocookie.com',
     RATES: [0.5, 1, 1.5, 2],
-    SKIP_SECONDS: 10,
+    // Skip buttons, mirrored either side of play. Fine steps first so a
+    // frame-accurate annotation does not need a scrub.
+    SKIP_STEPS: [1, 3, 10],
     TICK_MS: 250,
     PLAYING: 1,   // YT.PlayerState.PLAYING
     BUFFERING: 3, // YT.PlayerState.BUFFERING
@@ -812,10 +814,10 @@ const Video = {
     },
 
     setTransportEnabled(enabled) {
-        const ids = [
-            'video-back10', 'video-playpause', 'video-fwd10',
-            'video-cc', 'video-mute', 'video-rate', 'video-scrubber',
-        ];
+        const ids = ['video-playpause', 'video-cc', 'video-mute', 'video-rate', 'video-scrubber'];
+        for (const step of this.SKIP_STEPS) {
+            ids.push(`video-back${step}`, `video-fwd${step}`);
+        }
         for (const id of ids) {
             const el = document.getElementById(id);
             if (el) el.disabled = !enabled;
@@ -862,8 +864,10 @@ const Video = {
             if (el) el.addEventListener(event, handler);
         };
 
-        on('video-back10', 'click', () => this.skip(-this.SKIP_SECONDS));
-        on('video-fwd10', 'click', () => this.skip(this.SKIP_SECONDS));
+        for (const step of this.SKIP_STEPS) {
+            on(`video-back${step}`, 'click', () => this.skip(-step));
+            on(`video-fwd${step}`, 'click', () => this.skip(step));
+        }
         on('video-playpause', 'click', () => this.togglePlay());
         on('video-cc', 'click', () => this.toggleCaptions());
         on('video-mute', 'click', () => this.toggleMute());

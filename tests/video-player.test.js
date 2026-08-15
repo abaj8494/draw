@@ -90,7 +90,7 @@ test('the miniplayer buttons drive the ten second skips', async () => {
     el(dom, 'video-fwd10').click();
     assertEqual(fake.calls[fake.calls.length - 1], 'seekTo:50:true');
 
-    assertEqual(Video.SKIP_SECONDS, 10);
+    assertEqual(JSON.stringify(Video.SKIP_STEPS), '[1,3,10]');
 
     Video.teardown();
     dom.window.close();
@@ -917,5 +917,101 @@ test('an ended video shows the play icon again', async () => {
     assert(!el(dom, 'video-playpause').classList.contains('vp-playing'));
 
     Video.teardown();
+    dom.window.close();
+});
+
+// -------------------------------------------------------------- skip steps
+
+test('every skip button seeks by its own step', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+
+    const cases = [
+        ['video-back10', 60, 50],
+        ['video-back3', 60, 57],
+        ['video-back1', 60, 59],
+        ['video-fwd1', 60, 61],
+        ['video-fwd3', 60, 63],
+        ['video-fwd10', 60, 70],
+    ];
+
+    for (const [id, from, expected] of cases) {
+        const fake = embedWithFake(dom.window, { duration: 200, currentTime: from });
+        el(dom, id).click();
+        assertEqual(fake.calls[fake.calls.length - 1], `seekTo:${expected}:true`, id);
+        Video.teardown();
+    }
+
+    dom.window.close();
+});
+
+test('the fine steps clamp at the ends like the coarse ones', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+
+    let fake = embedWithFake(dom.window, { duration: 200, currentTime: 0.5 });
+    el(dom, 'video-back1').click();
+    assertEqual(fake.calls[fake.calls.length - 1], 'seekTo:0:true', 'never before the start');
+    Video.teardown();
+
+    fake = embedWithFake(dom.window, { duration: 200, currentTime: 199.5 });
+    el(dom, 'video-fwd1').click();
+    assertEqual(fake.calls[fake.calls.length - 1], 'seekTo:200:true', 'never past the end');
+    Video.teardown();
+
+    dom.window.close();
+});
+
+test('all skip buttons are disabled until a player is ready', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+
+    const ids = [];
+    for (const step of Video.SKIP_STEPS) ids.push(`video-back${step}`, `video-fwd${step}`);
+    assertEqual(ids.length, 6);
+
+    for (const id of ids) assertEqual(el(dom, id).disabled, true, id + ' starts disabled');
+
+    embedWithFake(dom.window, {});
+    for (const id of ids) assertEqual(el(dom, id).disabled, false, id + ' enabled when ready');
+
+    Video.teardown();
+    for (const id of ids) assertEqual(el(dom, id).disabled, true, id + ' disabled again');
+
+    dom.window.close();
+});
+
+test('the skip buttons are laid out symmetrically around play', async () => {
+    const dom = await loadApp();
+    const { document } = dom.window;
+
+    const row = document.querySelector('.vp-transport');
+    assert(row, 'transport has its own row');
+
+    const ids = Array.from(row.querySelectorAll('button')).map(b => b.id);
+    assertEqual(JSON.stringify(ids), JSON.stringify([
+        'video-back10', 'video-back3', 'video-back1',
+        'video-playpause',
+        'video-fwd1', 'video-fwd3', 'video-fwd10',
+    ]), 'fine steps sit nearest play, mirrored either side');
+
+    dom.window.close();
+});
+
+test('each skip button is labelled with its step', async () => {
+    const dom = await loadApp();
+    const { document } = dom.window;
+
+    assertEqual(document.getElementById('video-back1').title, '-1 second');
+    assertEqual(document.getElementById('video-back3').title, '-3 seconds');
+    assertEqual(document.getElementById('video-back10').title, '-10 seconds');
+    assertEqual(document.getElementById('video-fwd1').title, '+1 second');
+    assertEqual(document.getElementById('video-fwd3').title, '+3 seconds');
+    assertEqual(document.getElementById('video-fwd10').title, '+10 seconds');
+
+    // The digit is inside the icon so it cannot collide with the arrow.
+    assertEqual(document.querySelector('#video-back3 svg text').textContent, '3');
+    assertEqual(document.querySelector('#video-fwd1 svg text').textContent, '1');
+
     dom.window.close();
 });
