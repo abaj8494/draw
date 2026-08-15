@@ -7,22 +7,37 @@ const Export = {
      * Export to PNG
      */
     toPNG() {
-        // Create a temporary canvas at full resolution
+        const tempCanvas = this.renderToCanvas();
+        const dataURL = tempCanvas.toDataURL('image/png');
+        this.downloadFile(dataURL, 'drawing.png');
+    },
+
+    /**
+     * Render the current viewport into a fresh offscreen canvas at full
+     * resolution. Shared by PNG and PDF export.
+     */
+    renderToCanvas() {
         const tempCanvas = document.createElement('canvas');
         const dpr = Canvas.dpr || 1;
         tempCanvas.width = Canvas.width * dpr;
         tempCanvas.height = Canvas.height * dpr;
+
         const ctx = tempCanvas.getContext('2d');
-
-        // Scale for DPR
         ctx.scale(dpr, dpr);
+        this.renderScene(ctx);
 
-        // Draw background
+        return tempCanvas;
+    },
+
+    /**
+     * Paint background, grid and every stroke into a context
+     */
+    renderScene(ctx) {
         const bgConfig = Canvas.backgrounds[Canvas.currentBackground];
+
         ctx.fillStyle = bgConfig.bg;
         ctx.fillRect(0, 0, Canvas.width, Canvas.height);
 
-        // Draw grid if needed
         if (bgConfig.type === 'grid') {
             ctx.strokeStyle = bgConfig.line;
             ctx.lineWidth = 1;
@@ -42,14 +57,9 @@ const Export = {
             ctx.stroke();
         }
 
-        // Draw all strokes
         for (const stroke of Canvas.strokes) {
             this.renderStrokeToContext(ctx, stroke);
         }
-
-        // Create download link
-        const dataURL = tempCanvas.toDataURL('image/png');
-        this.downloadFile(dataURL, 'drawing.png');
     },
 
     /**
@@ -138,6 +148,17 @@ const Export = {
      * Export to SVG
      */
     toSVG() {
+        const svgContent = this.buildSVG();
+        const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        this.downloadFile(url, 'drawing.svg');
+        URL.revokeObjectURL(url);
+    },
+
+    /**
+     * Build the SVG document for the current viewport
+     */
+    buildSVG() {
         const width = Canvas.width;
         const height = Canvas.height;
         const bgColor = Canvas.getBackgroundColor();
@@ -204,11 +225,7 @@ const Export = {
 
         svgContent += '</svg>';
 
-        // Create download
-        const blob = new Blob([svgContent], { type: 'image/svg+xml' });
-        const url = URL.createObjectURL(blob);
-        this.downloadFile(url, 'drawing.svg');
-        URL.revokeObjectURL(url);
+        return svgContent;
     },
 
     /**
@@ -263,43 +280,7 @@ const Export = {
 
         const { jsPDF } = window.jspdf;
 
-        // Create a temporary canvas at full resolution
-        const tempCanvas = document.createElement('canvas');
-        const dpr = Canvas.dpr || 1;
-        tempCanvas.width = Canvas.width * dpr;
-        tempCanvas.height = Canvas.height * dpr;
-        const ctx = tempCanvas.getContext('2d');
-
-        ctx.scale(dpr, dpr);
-
-        // Draw background
-        const bgConfig = Canvas.backgrounds[Canvas.currentBackground];
-        ctx.fillStyle = bgConfig.bg;
-        ctx.fillRect(0, 0, Canvas.width, Canvas.height);
-
-        if (bgConfig.type === 'grid') {
-            ctx.strokeStyle = bgConfig.line;
-            ctx.lineWidth = 1;
-            const scaledGridSize = Canvas.gridSize * Canvas.scale;
-
-            ctx.beginPath();
-            for (let x = Canvas.offsetX % scaledGridSize; x < Canvas.width; x += scaledGridSize) {
-                const px = Math.round(x) + 0.5;
-                ctx.moveTo(px, 0);
-                ctx.lineTo(px, Canvas.height);
-            }
-            for (let y = Canvas.offsetY % scaledGridSize; y < Canvas.height; y += scaledGridSize) {
-                const py = Math.round(y) + 0.5;
-                ctx.moveTo(0, py);
-                ctx.lineTo(Canvas.width, py);
-            }
-            ctx.stroke();
-        }
-
-        // Draw all strokes
-        for (const stroke of Canvas.strokes) {
-            this.renderStrokeToContext(ctx, stroke);
-        }
+        const tempCanvas = this.renderToCanvas();
 
         // Determine orientation based on canvas dimensions
         const orientation = Canvas.width > Canvas.height ? 'landscape' : 'portrait';
