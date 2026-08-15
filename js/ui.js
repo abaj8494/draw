@@ -25,6 +25,7 @@ const UI = {
         this.setupActionButtons();
         this.setupExportButtons();
         this.setupSaveButtons();
+        this.setupVideoControls();
         this.setupModal();
         this.setupToolbarDrag();
         this.setupMobileToggle();
@@ -280,6 +281,48 @@ const UI = {
 
         document.getElementById('load-btn').addEventListener('click', () => {
             this.showLoadDialog();
+        });
+    },
+
+    /**
+     * Setup the video embed controls
+     */
+    setupVideoControls() {
+        const input = document.getElementById('video-url');
+        const embedBtn = document.getElementById('video-embed-btn');
+        const removeBtn = document.getElementById('video-remove-btn');
+        const error = document.getElementById('video-error');
+        if (!input || !embedBtn || !removeBtn) return;
+
+        const showError = (message) => {
+            if (!error) return;
+            error.textContent = message;
+            error.classList.toggle('hidden', !message);
+        };
+
+        embedBtn.addEventListener('click', () => {
+            const stroke = Video.embed(input.value);
+            if (!stroke) {
+                showError('Not a YouTube link.');
+                return;
+            }
+            showError('');
+            input.value = '';
+            this.updateUndoRedoButtons();
+            App.triggerAutoSave();
+        });
+
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') embedBtn.click();
+        });
+
+        input.addEventListener('input', () => showError(''));
+
+        removeBtn.addEventListener('click', () => {
+            Video.remove();
+            showError('');
+            this.updateUndoRedoButtons();
+            App.triggerAutoSave();
         });
     },
 
