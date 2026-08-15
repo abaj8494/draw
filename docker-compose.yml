@@ -1,0 +1,64 @@
+# draw.fatfort.com — collaborative whiteboard.
+#
+# One Node container serving static frontend + API + WebSocket on 5003
+# (5000 arcade, 5001 agents, 5002 identity, 5004 calc-mcp). Caddy reaches it
+# by container name over the shared infra_web network: a single
+# reverse_proxy, no bind mount.
+services:
+  draw:
+    build: .
+    image: draw:latest                # explicit tag so rollback-<ts> tags work
+    container_name: draw
+    restart: unless-stopped
+
+    # The image declares USER node (uid 1000). On THIS box uid 1000 is
+    # `linuxuser` — tutorsfirst's account. Run as liminf (1002), who owns the
+    # bind-mounted data dir and /mnt/blockstorage/draw. Same pattern as agents.
+    user: "1002:1002"
+
+    environment:
+      NODE_ENV: production
+      PORT: "5003"
+      DB_PATH: /app/data/draw.db
+      SAVES_DIR: /mnt/blockstorage/draw/saves
+      FILES_DIR: /mnt/blockstorage/draw/files
+      IDENTITY_VERIFY_URL: http://fatfort-id:5002/internal/verify
+      TZ: Australia/Sydney
+      # uid 1002 has no passwd entry inside the container, so $HOME would
+      # resolve to "/"; give tooling somewhere writable.
+      HOME: /tmp
+
+    volumes:
+      - ./data:/app/data                        # SQLite metadata
+      - /mnt/blockstorage/draw:/mnt/blockstorage/draw  # saves + image files
+
+    # Loopback publish is for debugging / pre-DNS verification only; Caddy
+    # reaches this container by name over infra_web.
+    ports:
+      - "127.0.0.1:5003:5003"
+
+    networks:
+      - infra_web
+
+    # Hard ceilings: this box runs two mission-critical businesses and has
+    # ~630 MB actually free. The app enforces its own caps (64 WS conns,
+    # 8 live canvases, 2 MB docs) precisely so this limit is never reached.
+    mem_limit: 192m
+    cpus: 0.5
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5003/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+networks:
+  infra_web:
+    external: true

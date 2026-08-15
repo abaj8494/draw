@@ -454,6 +454,23 @@ const Video = {
     // --------------------------------------------------------------- transport
 
     /**
+     * [sync] Tell the session layer about a host transport action. The value
+     * the user just asked for is passed explicitly (seek targets, intended
+     * play state) because the iframe reports the old state for a beat.
+     */
+    notifySync(overrides) {
+        if (typeof Sync === 'undefined' || !Sync.active) return;
+        const rate = this.player && typeof this.player.getPlaybackRate === 'function'
+            ? this.player.getPlaybackRate()
+            : 1;
+        Sync.onVideoControl(Object.assign({
+            playing: this.displayedPlayState(),
+            time: this.readTime('getCurrentTime'),
+            rate: rate
+        }, overrides || {}));
+    },
+
+    /**
      * Seek relative to the current position, clamped to the video bounds
      */
     skip(delta) {
@@ -468,6 +485,7 @@ const Video = {
 
         this.player.seekTo(target, true);
         this.updateTransport();
+        this.notifySync({ time: target });
     },
 
     togglePlay() {
@@ -486,6 +504,7 @@ const Video = {
             expires: Date.now() + this.PLAY_INTENT_MS,
         };
         this.updateTransport();
+        this.notifySync({ playing: !wasPlaying });
     },
 
     /**
@@ -519,6 +538,7 @@ const Video = {
         const next = this.RATES[(index + 1) % this.RATES.length];
         this.player.setPlaybackRate(next);
         this.updateTransport();
+        this.notifySync({ rate: next });
         return next;
     },
 
@@ -537,7 +557,9 @@ const Video = {
         const duration = this.readTime('getDuration');
         if (duration > 0) {
             const fraction = Number(scrubber.value) / Number(scrubber.max || 1000);
-            this.player.seekTo(fraction * duration, true);
+            const target = fraction * duration;
+            this.player.seekTo(target, true);
+            this.notifySync({ time: target });
         }
         this.updateTransport();
     },
@@ -814,6 +836,13 @@ const Video = {
     },
 
     setTransportEnabled(enabled) {
+        // [sync] guests follow the host's playback: their transport stays
+        // dead even when the player is ready (mute/captions stay usable so a
+        // guest can un-silence the auto-muted follow).
+        const guestLocked = enabled
+            && typeof Sync !== 'undefined' && Sync.blocksVideoTransport();
+        if (guestLocked) enabled = false;
+
         const ids = ['video-playpause', 'video-cc', 'video-mute', 'video-rate', 'video-scrubber'];
         for (const step of this.SKIP_STEPS) {
             ids.push(`video-back${step}`, `video-fwd${step}`);
@@ -821,6 +850,13 @@ const Video = {
         for (const id of ids) {
             const el = document.getElementById(id);
             if (el) el.disabled = !enabled;
+        }
+
+        if (guestLocked) {
+            for (const id of ['video-mute', 'video-cc']) {
+                const el = document.getElementById(id);
+                if (el) el.disabled = false;
+            }
         }
     },
 
@@ -834,11 +870,17 @@ const Video = {
         const parsed = this.parseVideoId(input);
         if (!parsed) return null;
 
+        // [sync] read-only participants cannot swap the shared video
+        if (typeof Sync !== 'undefined' && !Sync.mayEdit()) return null;
+
         const existing = this.getVideoStroke();
         if (existing) {
             existing.videoId = parsed.videoId;
             existing.start = parsed.start;
             Canvas.redraw();
+            // [sync] re-point mutates the stroke in place, bypassing the
+            // Canvas mutators, so it needs its own upsert.
+            if (typeof Sync !== 'undefined') Sync.onStrokesUpserted([existing]);
             return existing;
         }
 
@@ -850,6 +892,8 @@ const Video = {
      * reconciler tears the iframe down on the resulting redraw.
      */
     remove() {
+        // [sync] read-only participants cannot remove the shared video
+        if (typeof Sync !== 'undefined' && !Sync.mayEdit()) return false;
         const stroke = this.getVideoStroke();
         if (!stroke) return false;
         return Canvas.removeStroke(Canvas.strokes.indexOf(stroke));

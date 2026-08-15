@@ -29,6 +29,12 @@ const App = {
             // Load saved state
             await this.loadSavedState();
 
+            // Start the session layer (fire-and-forget: solo drawing must
+            // work even if the server or network is down).
+            if (typeof Sync !== 'undefined') {
+                Sync.init().catch(err => console.error('Sync init failed:', err));
+            }
+
             console.log('Drawing app initialized');
         } catch (error) {
             console.error('Failed to initialize app:', error);
@@ -73,6 +79,13 @@ const App = {
      * Auto-save current state
      */
     autoSave() {
+        // [sync] the shared live document must not clobber the visitor's solo
+        // localStorage drawing; the server owns session persistence.
+        if (typeof Sync !== 'undefined' && Sync.active) {
+            UI.updateUndoRedoButtons();
+            return;
+        }
+
         const drawingState = Canvas.getState();
         Storage.autoSave(drawingState);
 
@@ -102,6 +115,12 @@ const App = {
      */
     async loadDrawing(id) {
         try {
+            // [sync] in a session, Load replaces the LIVE canvas for every
+            // participant: the server rebroadcasts the snapshot as ops.
+            if (typeof Sync !== 'undefined' && Sync.active) {
+                await Sync.loadSnapshot(id);
+                return;
+            }
             const drawing = await Storage.loadDrawing(id);
             if (drawing && drawing.data) {
                 Canvas.loadState(drawing.data);

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Draw</title>
-    <link rel="stylesheet" href="css/styles.css?v=2">
+    <link rel="stylesheet" href="/css/styles.css?v=3">
 </head>
 <body>
     <div id="app">
@@ -208,6 +208,21 @@
                     <button id="load-btn" class="save-btn">Load</button>
                 </div>
             </div>
+
+            <!-- Session (live collaboration) — managed by js/sync.js -->
+            <div id="session-section" class="toolbar-section hidden">
+                <label class="toolbar-label">Session</label>
+                <div id="session-status" class="session-status">Solo</div>
+                <a id="session-signin" class="session-btn session-signin hidden" href="/auth/sso/start">Sign in to host</a>
+                <div id="session-host-controls" class="hidden">
+                    <div class="share-row">
+                        <input type="text" id="share-link" readonly>
+                        <button id="share-copy-btn" class="session-btn" title="Copy share link">Copy</button>
+                    </div>
+                    <button id="share-rotate-btn" class="session-btn">New link</button>
+                </div>
+                <div id="participant-list"></div>
+            </div>
         </div>
 
         <!-- File Browser Modal -->
@@ -293,18 +308,33 @@
                 <button id="video-rate" class="vp-btn vp-rate" title="Playback speed">1&times;</button>
             </div>
         </div>
+
+        <!-- Guest tap-to-unmute (autoplay with sound needs a gesture) -->
+        <button id="video-unmute-overlay" class="hidden">Tap to unmute</button>
+
+        <!-- Join overlay: guests enter a display name here -->
+        <div id="join-overlay" class="hidden">
+            <div class="join-card">
+                <div class="join-title">Shared whiteboard</div>
+                <div id="join-message">Enter a display name to join this whiteboard.</div>
+                <input type="text" id="join-name" maxlength="40" placeholder="Your name">
+                <button id="join-btn">Join</button>
+            </div>
+        </div>
     </div>
 
     <!-- jsPDF for PDF export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <!-- Application Scripts -->
-    <script src="js/storage.js?v=2"></script>
-    <script src="js/canvas.js?v=2"></script>
-    <script src="js/video.js?v=2"></script>
-    <script src="js/tools.js?v=2"></script>
-    <script src="js/export.js?v=2"></script>
-    <script src="js/ui.js?v=2"></script>
-    <script src="js/app.js?v=2"></script>
+    <!-- Application Scripts (absolute paths: this page is also served at /c/<token>) -->
+    <script src="/js/storage.js?v=3"></script>
+    <script src="/js/canvas.js?v=3"></script>
+    <script src="/js/video.js?v=3"></script>
+    <script src="/js/tools.js?v=3"></script>
+    <script src="/js/export.js?v=3"></script>
+    <script src="/js/ui.js?v=3"></script>
+    <script src="/js/reducer.js?v=3"></script>
+    <script src="/js/sync.js?v=3"></script>
+    <script src="/js/app.js?v=3"></script>
 </body>
 </html>

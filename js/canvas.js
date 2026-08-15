@@ -44,6 +44,19 @@ const Canvas = {
     gridSize: 20,
 
     /**
+     * Random id for a stroke. Session sync addresses strokes by id (array
+     * indices shift under remote deletes); solo mode simply ignores it.
+     */
+    newId() {
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            const bytes = new Uint8Array(8);
+            crypto.getRandomValues(bytes);
+            return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+        }
+        return Date.now().toString(16) + Math.random().toString(16).slice(2, 10);
+    },
+
+    /**
      * Initialize canvas elements
      */
     init() {
@@ -131,6 +144,8 @@ const Canvas = {
         if (this.backgrounds[bgKey]) {
             this.currentBackground = bgKey;
             this.drawBackground();
+            // [sync] background picker
+            if (typeof Sync !== 'undefined') Sync.onBackground(bgKey);
         }
     },
 
@@ -344,6 +359,7 @@ const Canvas = {
     startStroke(type, x, y, color, size, opacity = 1) {
         const canvasPoint = this.toCanvas(x, y);
         this.currentStroke = {
+            id: this.newId(),
             type: type,
             points: [canvasPoint],
             color: color,
@@ -371,11 +387,14 @@ const Canvas = {
      */
     endStroke() {
         if (this.currentStroke && this.currentStroke.points.length > 0) {
-            this.strokes.push(this.currentStroke);
-            this.undoStack.push({ action: 'add', stroke: this.currentStroke });
+            const stroke = this.currentStroke;
+            this.strokes.push(stroke);
+            this.undoStack.push({ action: 'add', stroke: stroke });
             this.redoStack = [];
             this.currentStroke = null;
             this.redraw();
+            // [sync] committed freehand/eraser stroke
+            if (typeof Sync !== 'undefined') Sync.onStrokeAdded(stroke);
             return true;
         }
         this.currentStroke = null;
@@ -479,8 +498,14 @@ const Canvas = {
             before: [JSON.parse(JSON.stringify(this.strokes[index]))]
         });
         this.redoStack = [];
+        // Keep the identity stable across an edit; sync matches by id.
+        if (this.strokes[index] && this.strokes[index].id && !stroke.id) {
+            stroke.id = this.strokes[index].id;
+        }
         this.strokes[index] = stroke;
         this.redraw();
+        // [sync] text re-edit and other whole-object replacements
+        if (typeof Sync !== 'undefined') Sync.onStrokesUpserted([stroke]);
         return true;
     },
 
@@ -516,6 +541,10 @@ const Canvas = {
             this.undoStack.push({ action: 'remove', stroke: removed, index: index });
             this.redoStack = [];
             this.redraw();
+            // [sync] object eraser, video close, text cleared
+            if (typeof Sync !== 'undefined' && removed && removed.id) {
+                Sync.onStrokesDeleted([removed.id]);
+            }
             return true;
         }
         return false;
@@ -630,6 +659,10 @@ const Canvas = {
         this.undoStack.push({ action: 'remove-multiple', strokes: removed });
         this.redoStack = [];
         this.redraw();
+        // [sync] delete-selection
+        if (typeof Sync !== 'undefined') {
+            Sync.onStrokesDeleted(removed.map(r => r.stroke && r.stroke.id).filter(Boolean));
+        }
     },
 
     /**
@@ -696,6 +729,11 @@ const Canvas = {
      * Undo last action
      */
     undo() {
+        // [sync] in a session, undo is per-user and must go out as inverse
+        // ops through the op funnel rather than mutating locally only.
+        if (typeof Sync !== 'undefined' && Sync.active && !Sync.applying) {
+            return Sync.undo();
+        }
         if (this.undoStack.length === 0) return false;
 
         const action = this.undoStack.pop();
@@ -740,6 +778,10 @@ const Canvas = {
      * Redo last undone action
      */
     redo() {
+        // [sync] see undo()
+        if (typeof Sync !== 'undefined' && Sync.active && !Sync.applying) {
+            return Sync.redo();
+        }
         if (this.redoStack.length === 0) return false;
 
         const action = this.redoStack.pop();
@@ -785,10 +827,22 @@ const Canvas = {
      */
     clearAll() {
         if (this.strokes.length > 0) {
+            const cleared = this.strokes;
             this.strokes = [];
-            this.undoStack = [];
-            this.redoStack = [];
+            if (typeof Sync !== 'undefined' && Sync.active) {
+                // In a session a clear is one op like any other: it lands in
+                // the per-user undo history (making the 'clear' undo/redo
+                // branches above reachable) and goes out over the wire.
+                this.undoStack.push({ action: 'clear', strokes: cleared });
+                this.redoStack = [];
+            } else {
+                // Solo behaviour is unchanged: clear is permanent.
+                this.undoStack = [];
+                this.redoStack = [];
+            }
             this.redraw();
+            // [sync] clear button
+            if (typeof Sync !== 'undefined') Sync.onClear();
         }
     },
 
@@ -811,6 +865,11 @@ const Canvas = {
     loadState(state) {
         if (state) {
             this.strokes = state.strokes || [];
+            // Saves made before strokes carried ids get them backfilled here,
+            // so a loaded document is always addressable by id.
+            for (const stroke of this.strokes) {
+                if (stroke && !stroke.id) stroke.id = this.newId();
+            }
             // A save naming a preset we no longer ship must not brick the load.
             this.currentBackground = this.backgrounds[state.background]
                 ? state.background
@@ -834,6 +893,7 @@ const Canvas = {
         const centerCanvas = this.toCanvas(centerScreen.x, centerScreen.y);
 
         const stroke = {
+            id: this.newId(),
             type: 'image',
             src: src,
             x: centerCanvas.x - imgWidth / 2,
@@ -847,6 +907,8 @@ const Canvas = {
         this.undoStack.push({ action: 'add', stroke: stroke });
         this.redoStack = [];
         this.redraw();
+        // [sync] image paste
+        if (typeof Sync !== 'undefined') Sync.onStrokeAdded(stroke);
         return stroke;
     },
 
@@ -863,6 +925,7 @@ const Canvas = {
         const centre = this.toCanvas(this.width / 2, this.height / 2);
 
         const stroke = {
+            id: this.newId(),
             type: 'video',
             videoId: videoId,
             x: centre.x - worldWidth / 2,
@@ -877,6 +940,8 @@ const Canvas = {
         this.undoStack.push({ action: 'add', stroke: stroke });
         this.redoStack = [];
         this.redraw();
+        // [sync] video embed
+        if (typeof Sync !== 'undefined') Sync.onStrokeAdded(stroke);
         return stroke;
     },
 

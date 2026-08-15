@@ -192,6 +192,8 @@ const UI = {
 
         bgOptions.forEach(option => {
             option.addEventListener('click', () => {
+                // [sync] read-only participants cannot restyle the shared canvas
+                if (typeof Sync !== 'undefined' && !Sync.mayEdit()) return;
                 const bg = option.dataset.bg;
 
                 // Update active state
@@ -232,6 +234,8 @@ const UI = {
 
         clearBtn.addEventListener('click', () => {
             if (Canvas.strokes.length === 0) return;
+            // [sync] clear is host-only in a session
+            if (typeof Sync !== 'undefined' && !Sync.mayClear()) return;
 
             if (confirm('Clear the canvas? This cannot be undone.')) {
                 Canvas.clearAll();

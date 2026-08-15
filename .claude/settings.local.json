@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(git -C /var/www/draw status)",
+      "Bash(openresty -t:*)",
+      "Bash(systemctl reload:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(chown:*)",
+      "Bash(chmod:*)",
+      "Bash(curl:*)",
+      "WebSearch",
+      "WebFetch(domain:heroicons.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(nginx:*)",
+      "Bash(openresty:*)",
+      "Bash(node:*)",
+      "Read(//etc/nginx/sites-enabled/**)",
+      "Read(//etc/apache2/**)",
+      "Bash(systemctl is-active *)",
+      "Read(//usr/local/lib/node_modules/**)",
+      "Bash(npm list *)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(npx playwright *)",
+      "Bash(getent hosts *)",
+      "Read(//etc/**)",
+      "Bash(npm test *)",
+      "Bash(E2E=1 npm test)",
+      "Bash(git push *)"
+    ]
+  }
+}

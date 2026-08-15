@@ -908,3 +908,158 @@ canvas {
 .modal-body::-webkit-scrollbar-thumb:hover {
     background: #999;
 }
+
+/* ============================= Session (sync) ============================= */
+/* UI for js/sync.js: session panel, join overlay, participants, unmute.     */
+
+#session-section.hidden,
+#session-signin.hidden,
+#session-host-controls.hidden,
+#join-overlay.hidden,
+#video-unmute-overlay.hidden {
+    display: none;
+}
+
+.session-status {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 6px;
+}
+
+.session-btn {
+    display: inline-block;
+    padding: 5px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #f7f7f7;
+    color: #333;
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+}
+
+.session-btn:hover {
+    background: #ececec;
+}
+
+.share-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+#share-link {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 6px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #555;
+}
+
+.participant-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 12px;
+}
+
+.participant-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.participant-btn {
+    padding: 3px 6px;
+    font-size: 11px;
+}
+
+.participant-kick {
+    color: #b32424;
+    border-color: #d9a0a0;
+}
+
+/* A read-only participant sees the canvas but cannot mark it. */
+body.sync-readonly #drawing-canvas {
+    cursor: default;
+}
+
+.save-btn.hidden {
+    display: none;
+}
+
+#join-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(20, 22, 26, 0.55);
+}
+
+.join-card {
+    width: min(360px, 90vw);
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.join-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#join-message {
+    font-size: 13px;
+    color: #555;
+}
+
+#join-name {
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+#join-name.hidden,
+#join-btn.hidden {
+    display: none;
+}
+
+#join-btn {
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: #2d7ff9;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#join-btn:hover {
+    background: #1f6fe8;
+}
+
+#video-unmute-overlay {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 2500;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 20px;
+    background: rgba(20, 22, 26, 0.85);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+}

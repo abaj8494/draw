@@ -311,6 +311,8 @@ const Tools = {
             // Delete selected strokes
             if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedStrokes.length > 0) {
                 e.preventDefault();
+                // [sync] read-only participants cannot delete
+                if (typeof Sync !== 'undefined' && !Sync.mayEdit()) return;
                 Canvas.deleteStrokes(this.selectedStrokes);
                 this.clearSelection();
             }
@@ -355,6 +357,14 @@ const Tools = {
                 e.preventDefault();
                 const blob = item.getAsFile();
                 if (!blob) continue;
+
+                // [sync] in a session images travel by HTTP upload and land on
+                // the canvas as a small /api/files/<hash> reference — a base64
+                // data URL must never be broadcast over the WebSocket.
+                if (typeof Sync !== 'undefined' && Sync.active) {
+                    if (Sync.mayEdit()) Sync.pasteImage(blob);
+                    return;
+                }
 
                 const reader = new FileReader();
                 reader.onload = (event) => {
@@ -402,6 +412,10 @@ const Tools = {
         // and middle-click for the browser, and both share this listener.
         // Touch events carry no button, so an undefined one is primary.
         if (e.button !== undefined && e.button !== 0) return;
+
+        // [sync] a read-only participant can look (pan, zoom, laser, select)
+        // but must not mutate the shared document.
+        if (typeof Sync !== 'undefined' && Sync.blocksTool(this.currentTool)) return;
 
         const coords = this.getCoords(e);
         this.isDrawing = true;
@@ -460,6 +474,12 @@ const Tools = {
                         this._resizeOriginalStrokes = this.selectedStrokes.map(i => JSON.parse(JSON.stringify(Canvas.strokes[i])));
                     } else {
                         this.moveStart = { x: coords.x, y: coords.y };
+                        // Snapshot originals so the whole drag becomes ONE
+                        // undoable 'replace' on pointer-up (moves used to be
+                        // silently un-undoable).
+                        this._moveOriginalStrokes = this.selectedStrokes.map(
+                            i => JSON.parse(JSON.stringify(Canvas.strokes[i])));
+                        this._didMove = false;
                         Canvas.drawCanvas.classList.add('cursor-move-active');
                     }
                 } else {
@@ -612,6 +632,7 @@ const Tools = {
                 } else if (this.moveStart && this.selectedStrokes.length > 0) {
                     const mdx = coords.x - this.moveStart.x;
                     const mdy = coords.y - this.moveStart.y;
+                    if (mdx !== 0 || mdy !== 0) this._didMove = true;
                     Canvas.moveStrokes(this.selectedStrokes, mdx, mdy);
                     this.moveStart = { x: coords.x, y: coords.y };
                     this.highlightSelection();
@@ -715,8 +736,27 @@ const Tools = {
                     this.resizeOriginalBounds = null;
                     this.resizeStartMouse = null;
                     this._resizeOriginalStrokes = null;
+                    // [sync] resize commits the selected strokes wholesale
+                    if (typeof Sync !== 'undefined') {
+                        Sync.onStrokesUpserted(this.selectedStrokes.map(i => Canvas.strokes[i]).filter(Boolean));
+                    }
                     App.triggerAutoSave();
+                } else if (this._didMove && this._moveOriginalStrokes && this.selectedStrokes.length > 0) {
+                    // A completed drag is one undoable replace (bug fix: the
+                    // move used to leave no undo entry at all).
+                    Canvas.undoStack.push({
+                        action: 'replace',
+                        indices: [...this.selectedStrokes],
+                        before: this._moveOriginalStrokes
+                    });
+                    Canvas.redoStack = [];
+                    // [sync] move commits the selected strokes wholesale
+                    if (typeof Sync !== 'undefined') {
+                        Sync.onStrokesUpserted(this.selectedStrokes.map(i => Canvas.strokes[i]).filter(Boolean));
+                    }
                 }
+                this._moveOriginalStrokes = null;
+                this._didMove = false;
                 this.moveStart = null;
                 if (this.selectedStrokes.length > 0) {
                     App.triggerAutoSave();
@@ -996,6 +1036,7 @@ const Tools = {
         if (dx < 5 && dy < 5) return;
 
         const stroke = {
+            id: Canvas.newId(),
             type: 'shape',
             points: points,
             color: this.brushColor,
@@ -1007,6 +1048,8 @@ const Tools = {
         Canvas.undoStack.push({ action: 'add', stroke: stroke });
         Canvas.redoStack = [];
         Canvas.redraw();
+        // [sync] finalized shape
+        if (typeof Sync !== 'undefined') Sync.onStrokeAdded(stroke);
         App.triggerAutoSave();
     },
 
@@ -1447,6 +1490,7 @@ const Tools = {
             }
         } else if (text && this.textCanvasPoint) {
             const stroke = {
+                id: Canvas.newId(),
                 type: 'text',
                 text: text,
                 x: this.textCanvasPoint.x,
@@ -1460,6 +1504,8 @@ const Tools = {
             Canvas.undoStack.push({ action: 'add', stroke: stroke });
             Canvas.redoStack = [];
             Canvas.redraw();
+            // [sync] new text committed
+            if (typeof Sync !== 'undefined') Sync.onStrokeAdded(stroke);
             App.triggerAutoSave();
         } else {
             Canvas.redraw();
