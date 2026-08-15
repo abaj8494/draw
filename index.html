@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Draw</title>
-    <link rel="stylesheet" href="/css/styles.css?v=3">
+    <!-- v=5, not 4: ?v=4 was requested against the origin before the rebuild
+         shipped, so Cloudflare cached the OLD stylesheet under the NEW version
+         string for the full 4h TTL. Never fetch a bumped asset URL until the
+         new file is actually deployed — the version is only a cache key, and a
+         premature request burns it. -->
+    <link rel="stylesheet" href="/css/styles.css?v=5">
 </head>
 <body>
     <div id="app">
@@ -25,10 +30,10 @@
             <div class="toolbar-header">
                 <a class="ff-matrix" href="https://fatfort.com/"
                    title="FatFort — back to the estate" aria-label="Back to fatfort.com">
-                    <span class="ff-cell off">TT</span>
-                    <span class="ff-cell">TF</span>
-                    <span class="ff-cell">FT</span>
-                    <span class="ff-cell lit">FF</span>
+                    <span class="ff-cell off"></span>
+                    <span class="ff-cell"></span>
+                    <span class="ff-cell"></span>
+                    <span class="ff-cell lit"></span>
                 </a>
                 <span class="toolbar-title">Tools</span>
                 <div class="toolbar-header-buttons">
