@@ -11,8 +11,14 @@ const Video = {
     API_TIMEOUT_MS: 10000,
     API_SRC: 'https://www.youtube.com/iframe_api',
     HOST: 'https://www.youtube-nocookie.com',
+    RATES: [0.5, 1, 1.5, 2],
+    SKIP_SECONDS: 10,
+    TICK_MS: 250,
+    PLAYING: 1, // YT.PlayerState.PLAYING
 
     player: null,
+    isScrubbing: false,
+    tickTimer: null,
     // Test seam: (targetEl, opts) => player. When set, the network is never
     // touched and player creation is synchronous.
     playerFactory: null,
@@ -186,11 +192,15 @@ const Video = {
     showChrome() {
         const layer = document.getElementById('video-layer');
         if (layer) layer.classList.remove('hidden');
+        const mini = document.getElementById('video-miniplayer');
+        if (mini) mini.classList.remove('hidden');
     },
 
     hideChrome() {
         const layer = document.getElementById('video-layer');
         if (layer) layer.classList.add('hidden');
+        const mini = document.getElementById('video-miniplayer');
+        if (mini) mini.classList.add('hidden');
     },
 
     /**
@@ -336,9 +346,15 @@ const Video = {
         return this.player;
     },
 
-    onPlayerReady() {},
+    onPlayerReady() {
+        this.setTransportEnabled(true);
+        this.startTick();
+        this.updateTransport();
+    },
 
-    onPlayerStateChange() {},
+    onPlayerStateChange() {
+        this.updateTransport();
+    },
 
     /**
      * Last resort when the API is blocked or the machine is offline: a plain
@@ -360,6 +376,8 @@ const Video = {
      * embed has a target element for YT.Player to replace.
      */
     teardown() {
+        this.stopTick();
+
         if (this.player && typeof this.player.destroy === 'function') {
             try { this.player.destroy(); } catch (e) { /* already gone */ }
         }
@@ -375,6 +393,171 @@ const Video = {
             layer.innerHTML = '<div id="video-player-target"></div>';
             layer.style.transform = '';
             layer.classList.add('hidden');
+        }
+
+        const mini = document.getElementById('video-miniplayer');
+        if (mini) mini.classList.add('hidden');
+        this.resetTransport();
+    },
+
+    // --------------------------------------------------------------- transport
+
+    /**
+     * Seek relative to the current position, clamped to the video bounds
+     */
+    skip(delta) {
+        if (!this.player || typeof this.player.seekTo !== 'function') return;
+
+        const current = this.readTime('getCurrentTime');
+        const duration = this.readTime('getDuration');
+
+        let target = current + delta;
+        if (target < 0) target = 0;
+        if (duration > 0 && target > duration) target = duration;
+
+        this.player.seekTo(target, true);
+        this.updateTransport();
+    },
+
+    togglePlay() {
+        if (!this.player) return;
+        if (this.isPlaying()) this.player.pauseVideo();
+        else if (typeof this.player.playVideo === 'function') this.player.playVideo();
+        this.updateTransport();
+    },
+
+    /**
+     * Cycle 1 -> 1.5 -> 2 -> 0.5 -> 1
+     */
+    cyclePlaybackRate() {
+        if (!this.player || typeof this.player.setPlaybackRate !== 'function') return 1;
+
+        const current = typeof this.player.getPlaybackRate === 'function'
+            ? this.player.getPlaybackRate()
+            : 1;
+
+        let index = this.RATES.indexOf(current);
+        if (index === -1) index = this.RATES.indexOf(1);
+
+        const next = this.RATES[(index + 1) % this.RATES.length];
+        this.player.setPlaybackRate(next);
+        this.updateTransport();
+        return next;
+    },
+
+    /**
+     * While a scrub is in progress the tick must not fight the user's drag.
+     */
+    onScrubInput() {
+        this.isScrubbing = true;
+    },
+
+    onScrubChange() {
+        const scrubber = document.getElementById('video-scrubber');
+        this.isScrubbing = false;
+        if (!scrubber || !this.player || typeof this.player.seekTo !== 'function') return;
+
+        const duration = this.readTime('getDuration');
+        if (duration > 0) {
+            const fraction = Number(scrubber.value) / Number(scrubber.max || 1000);
+            this.player.seekTo(fraction * duration, true);
+        }
+        this.updateTransport();
+    },
+
+    isPlaying() {
+        return !!this.player
+            && typeof this.player.getPlayerState === 'function'
+            && this.player.getPlayerState() === this.PLAYING;
+    },
+
+    /**
+     * Read a time from the player, treating anything non-finite as zero — the
+     * API reports NaN before metadata has loaded.
+     */
+    readTime(method) {
+        if (!this.player || typeof this.player[method] !== 'function') return 0;
+        const value = Number(this.player[method]());
+        return isFinite(value) && value > 0 ? value : 0;
+    },
+
+    /**
+     * Push player state into the miniplayer chrome
+     */
+    updateTransport() {
+        if (!this.player) return;
+
+        const current = this.readTime('getCurrentTime');
+        const duration = this.readTime('getDuration');
+
+        const currentEl = document.getElementById('video-current');
+        if (currentEl) currentEl.textContent = this.formatTime(current);
+
+        const durationEl = document.getElementById('video-duration');
+        if (durationEl) durationEl.textContent = this.formatTime(duration);
+
+        const scrubber = document.getElementById('video-scrubber');
+        if (scrubber && !this.isScrubbing) {
+            const max = Number(scrubber.max || 1000);
+            scrubber.value = duration > 0
+                ? String(Math.round((current / duration) * max))
+                : '0';
+        }
+
+        const playPause = document.getElementById('video-playpause');
+        if (playPause) {
+            const playing = this.isPlaying();
+            playPause.classList.toggle('vp-playing', playing);
+            playPause.title = playing ? 'Pause' : 'Play';
+            playPause.innerHTML = playing
+                ? '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>'
+                : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+        }
+
+        const rate = document.getElementById('video-rate');
+        if (rate && typeof this.player.getPlaybackRate === 'function') {
+            rate.textContent = this.player.getPlaybackRate() + '×';
+        }
+    },
+
+    /**
+     * Return the chrome to its idle state when there is no player
+     */
+    resetTransport() {
+        this.isScrubbing = false;
+        this.setTransportEnabled(false);
+
+        const scrubber = document.getElementById('video-scrubber');
+        if (scrubber) scrubber.value = '0';
+        const currentEl = document.getElementById('video-current');
+        if (currentEl) currentEl.textContent = '0:00';
+        const durationEl = document.getElementById('video-duration');
+        if (durationEl) durationEl.textContent = '0:00';
+        const rate = document.getElementById('video-rate');
+        if (rate) rate.textContent = '1×';
+    },
+
+    startTick() {
+        this.stopTick();
+        this.tickTimer = setInterval(() => this.updateTransport(), this.TICK_MS);
+    },
+
+    /**
+     * Must run on teardown: a live interval outlives the page in tests and
+     * keeps polling a destroyed player in the browser.
+     */
+    stopTick() {
+        if (this.tickTimer) {
+            clearInterval(this.tickTimer);
+            this.tickTimer = null;
+        }
+    },
+
+    setTransportEnabled(enabled) {
+        const ids = ['video-back10', 'video-playpause', 'video-fwd10', 'video-rate', 'video-scrubber'];
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            if (el) el.disabled = !enabled;
         }
     },
 
@@ -410,9 +593,27 @@ const Video = {
     },
 
     /**
-     * Safe to call before any video exists.
+     * Wire the miniplayer controls. Safe to call before any video exists.
      */
     init() {
+        const on = (id, event, handler) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener(event, handler);
+        };
+
+        on('video-back10', 'click', () => this.skip(-this.SKIP_SECONDS));
+        on('video-fwd10', 'click', () => this.skip(this.SKIP_SECONDS));
+        on('video-playpause', 'click', () => this.togglePlay());
+        on('video-rate', 'click', () => this.cyclePlaybackRate());
+        on('video-scrubber', 'input', () => this.onScrubInput());
+        on('video-scrubber', 'change', () => this.onScrubChange());
+        on('video-close', 'click', () => {
+            this.remove();
+            if (typeof UI !== 'undefined') UI.updateUndoRedoButtons();
+            if (typeof App !== 'undefined') App.triggerAutoSave();
+        });
+
+        this.resetTransport();
         this.syncFromCanvas();
     }
 };
