@@ -14,12 +14,16 @@ const Video = {
     RATES: [0.5, 1, 1.5, 2],
     SKIP_SECONDS: 10,
     TICK_MS: 250,
-    PLAYING: 1, // YT.PlayerState.PLAYING
+    PLAYING: 1,   // YT.PlayerState.PLAYING
+    BUFFERING: 3, // YT.PlayerState.BUFFERING
+    PLAY_INTENT_MS: 1200, // how long to trust a press over the reported state
 
     // The captions module is named 'captions' on the HTML5 player, but older
     // players expose it as 'cc'. Probe for whichever this one answers to.
     CAPTION_MODULES: ['captions', 'cc'],
 
+    ICON_PLAY: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+    ICON_PAUSE: '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>',
     ICON_SOUND: '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
     ICON_MUTED: '<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>',
 
@@ -27,6 +31,12 @@ const Video = {
     isScrubbing: false,
     tickTimer: null,
     captionsOn: false,
+    _playIntent: null,
+
+    // Last values written into the miniplayer, so the tick can skip DOM writes
+    // that would change nothing.
+    _chrome: {},
+    _chromeWrites: 0,
     // Test seam: (targetEl, opts) => player. When set, the network is never
     // touched and player creation is synchronous.
     playerFactory: null,
@@ -460,9 +470,35 @@ const Video = {
 
     togglePlay() {
         if (!this.player) return;
-        if (this.isPlaying()) this.player.pauseVideo();
+
+        const wasPlaying = this.isPlaying();
+        if (wasPlaying) this.player.pauseVideo();
         else if (typeof this.player.playVideo === 'function') this.player.playVideo();
+
+        // Show the intended state straight away. The real one comes back from
+        // the iframe over postMessage, and waiting for it makes the button
+        // feel dead. The intent is dropped as soon as the player agrees, or
+        // after a grace period if it never does.
+        this._playIntent = {
+            playing: !wasPlaying,
+            expires: Date.now() + this.PLAY_INTENT_MS,
+        };
         this.updateTransport();
+    },
+
+    /**
+     * The play state to display: what the user just asked for while that is
+     * still pending, otherwise what the player reports.
+     */
+    displayedPlayState() {
+        const actual = this.isPlaying();
+        if (!this._playIntent) return actual;
+
+        if (actual === this._playIntent.playing || Date.now() > this._playIntent.expires) {
+            this._playIntent = null;
+            return actual;
+        }
+        return this._playIntent.playing;
     },
 
     /**
@@ -613,10 +649,19 @@ const Video = {
         return this.captionsOn;
     },
 
+    /**
+     * Whether the video is running.
+     *
+     * Buffering counts. YouTube goes unstarted -> buffering -> playing, and
+     * buffering can last a noticeable beat on the first press. Treating it as
+     * stopped left the button showing "play" after the user had already
+     * pressed it, so the next press was read as another play rather than the
+     * pause they meant.
+     */
     isPlaying() {
-        return !!this.player
-            && typeof this.player.getPlayerState === 'function'
-            && this.player.getPlayerState() === this.PLAYING;
+        if (!this.player || typeof this.player.getPlayerState !== 'function') return false;
+        const state = this.player.getPlayerState();
+        return state === this.PLAYING || state === this.BUFFERING;
     },
 
     /**
@@ -637,49 +682,73 @@ const Video = {
 
         const current = this.readTime('getCurrentTime');
         const duration = this.readTime('getDuration');
+        const playing = this.displayedPlayState();
+        const muted = this.isMuted();
+        const rate = typeof this.player.getPlaybackRate === 'function'
+            ? this.player.getPlaybackRate()
+            : null;
 
-        const currentEl = document.getElementById('video-current');
-        if (currentEl) currentEl.textContent = this.formatTime(current);
-
-        const durationEl = document.getElementById('video-duration');
-        if (durationEl) durationEl.textContent = this.formatTime(duration);
+        this.setText('video-current', 'current', this.formatTime(current));
+        this.setText('video-duration', 'duration', this.formatTime(duration));
+        if (rate !== null) this.setText('video-rate', 'rate', rate + '×');
 
         const scrubber = document.getElementById('video-scrubber');
         if (scrubber && !this.isScrubbing) {
             const max = Number(scrubber.max || 1000);
-            scrubber.value = duration > 0
+            const value = duration > 0
                 ? String(Math.round((current / duration) * max))
                 : '0';
+            if (scrubber.value !== value) {
+                scrubber.value = value;
+                this._chromeWrites++;
+            }
         }
 
-        const playPause = document.getElementById('video-playpause');
-        if (playPause) {
-            const playing = this.isPlaying();
-            playPause.classList.toggle('vp-playing', playing);
-            playPause.title = playing ? 'Pause' : 'Play';
-            playPause.innerHTML = playing
-                ? '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>'
-                : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
-        }
+        this.setIcon('video-playpause', 'playing', playing,
+            playing ? this.ICON_PAUSE : this.ICON_PLAY,
+            playing ? 'Pause' : 'Play', 'vp-playing');
 
-        const rate = document.getElementById('video-rate');
-        if (rate && typeof this.player.getPlaybackRate === 'function') {
-            rate.textContent = this.player.getPlaybackRate() + '×';
-        }
-
-        const mute = document.getElementById('video-mute');
-        if (mute) {
-            const muted = this.isMuted();
-            mute.classList.toggle('vp-active', muted);
-            mute.title = muted ? 'Unmute' : 'Mute';
-            mute.innerHTML = muted ? this.ICON_MUTED : this.ICON_SOUND;
-        }
+        this.setIcon('video-mute', 'muted', muted,
+            muted ? this.ICON_MUTED : this.ICON_SOUND,
+            muted ? 'Unmute' : 'Mute', 'vp-active');
 
         const captions = document.getElementById('video-cc');
-        if (captions) {
+        if (captions && this._chrome.captions !== this.captionsOn) {
             captions.classList.toggle('vp-active', this.captionsOn);
             captions.title = this.captionsOn ? 'Hide captions' : 'Show captions';
+            this._chrome.captions = this.captionsOn;
+            this._chromeWrites++;
         }
+    },
+
+    /**
+     * Write text only when it changed.
+     */
+    setText(id, key, value) {
+        if (this._chrome[key] === value) return;
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = value;
+        this._chrome[key] = value;
+        this._chromeWrites++;
+    },
+
+    /**
+     * Swap a button's icon only when its state changed.
+     *
+     * This runs on a 250ms tick, and replacing the icon destroys the element
+     * the pointer is pressing on. A swap landing between mousedown and mouseup
+     * means the browser never fires the click, so the press is swallowed.
+     */
+    setIcon(id, key, state, markup, title, className) {
+        if (this._chrome[key] === state) return;
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle(className, state);
+        el.title = title;
+        el.innerHTML = markup;
+        this._chrome[key] = state;
+        this._chromeWrites++;
     },
 
     /**
@@ -688,7 +757,16 @@ const Video = {
     resetTransport() {
         this.isScrubbing = false;
         this.captionsOn = false;
+        this._playIntent = null;
+        this._chrome = {};
         this.setTransportEnabled(false);
+
+        const playPause = document.getElementById('video-playpause');
+        if (playPause) {
+            playPause.classList.remove('vp-playing');
+            playPause.innerHTML = this.ICON_PLAY;
+            playPause.title = 'Play';
+        }
 
         const mute = document.getElementById('video-mute');
         if (mute) {
@@ -790,6 +868,11 @@ const Video = {
         on('video-cc', 'click', () => this.toggleCaptions());
         on('video-mute', 'click', () => this.toggleMute());
         on('video-rate', 'click', () => this.cyclePlaybackRate());
+        // Claim the drag on press, not on the first value change: otherwise a
+        // tick between grabbing the thumb and moving it snaps it back.
+        on('video-scrubber', 'pointerdown', () => this.onScrubInput());
+        on('video-scrubber', 'mousedown', () => this.onScrubInput());
+        on('video-scrubber', 'touchstart', () => this.onScrubInput());
         on('video-scrubber', 'input', () => this.onScrubInput());
         on('video-scrubber', 'change', () => this.onScrubChange());
         on('video-close', 'click', () => {

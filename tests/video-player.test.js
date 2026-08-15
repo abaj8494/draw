@@ -713,3 +713,209 @@ test('teardown resets the caption and mute chrome', async () => {
 
     dom.window.close();
 });
+
+// ------------------------------------------------------- chrome write churn
+
+test('an idle tick makes no DOM writes', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    embedWithFake(dom.window, { duration: 200, currentTime: 30 });
+
+    Video.updateTransport();
+    const before = Video._chromeWrites;
+
+    // Twenty ticks with nothing changing. Rewriting the play or mute icon here
+    // destroys the element a pointer may be pressing, swallowing the click.
+    for (let i = 0; i < 20; i++) Video.updateTransport();
+
+    assertEqual(Video._chromeWrites, before, 'the tick must be a no-op when nothing changed');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('the play icon is only replaced when playback state changes', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { duration: 200 });
+    const button = el(dom, 'video-playpause');
+
+    Video.updateTransport();
+    const icon = button.querySelector('svg');
+    assert(icon, 'an icon is present');
+
+    for (let i = 0; i < 10; i++) Video.updateTransport();
+    assert(button.querySelector('svg') === icon,
+        'the very same element survives idle ticks, so a press is never orphaned');
+
+    fake.state = PLAYING;
+    Video.updateTransport();
+    assert(button.querySelector('svg') !== icon, 'and is replaced when the state really changes');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('the mute icon is only replaced when the muted state changes', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, {});
+    const button = el(dom, 'video-mute');
+
+    Video.updateTransport();
+    const icon = button.querySelector('svg');
+
+    for (let i = 0; i < 10; i++) Video.updateTransport();
+    assert(button.querySelector('svg') === icon, 'unchanged across idle ticks');
+
+    fake.muted = true;
+    Video.updateTransport();
+    assert(button.querySelector('svg') !== icon, 'swapped once it actually mutes');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('the time readout still advances with playback', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { duration: 200, currentTime: 0 });
+
+    Video.updateTransport();
+    assertEqual(el(dom, 'video-current').textContent, '0:00');
+
+    fake.currentTime = 65;
+    Video.updateTransport();
+    assertEqual(el(dom, 'video-current').textContent, '1:05', 'dirty checking must not freeze the clock');
+
+    dom.window.close();
+});
+
+test('pressing the scrubber claims the drag before any value change', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { duration: 200, currentTime: 100 });
+    const scrubber = el(dom, 'video-scrubber');
+
+    assertEqual(Video.isScrubbing, false);
+
+    // Grab the thumb but do not move it yet.
+    scrubber.dispatchEvent(new dom.window.Event('mousedown', { bubbles: true }));
+    assertEqual(Video.isScrubbing, true, 'a tick must not snap the thumb back mid-grab');
+
+    scrubber.value = '750';
+    Video.updateTransport();
+    assertEqual(scrubber.value, '750', 'the grabbed position is held');
+
+    scrubber.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assertEqual(Video.isScrubbing, false);
+    assertEqual(fake.calls[fake.calls.length - 1], 'seekTo:150:true');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('a fresh embed resets the chrome cache so the first tick paints', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+
+    embedWithFake(dom.window, { duration: 200, currentTime: 30 });
+    assertEqual(el(dom, 'video-duration').textContent, '3:20');
+
+    Video.teardown();
+    assertEqual(el(dom, 'video-duration').textContent, '0:00');
+
+    embedWithFake(dom.window, { duration: 200, currentTime: 30 });
+    assertEqual(el(dom, 'video-duration').textContent, '3:20', 'the cache did not suppress the repaint');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+// ------------------------------------------------------- responsiveness
+
+const BUFFERING = 3;
+
+test('a buffering video counts as playing', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { state: BUFFERING });
+
+    // YouTube goes unstarted -> buffering -> playing. Reading buffering as
+    // stopped is what made the button need several presses.
+    assertEqual(Video.isPlaying(), true);
+
+    Video.updateTransport();
+    assert(el(dom, 'video-playpause').classList.contains('vp-playing'));
+    assertEqual(el(dom, 'video-playpause').title, 'Pause');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('one press pauses a video that is still buffering', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { state: PAUSED });
+    const button = el(dom, 'video-playpause');
+
+    button.click();
+    assertEqual(fake.called('playVideo').length, 1);
+
+    // The player has accepted the play but is still fetching data.
+    fake.state = BUFFERING;
+
+    button.click();
+    assertEqual(fake.called('pauseVideo').length, 1, 'the second press pauses rather than replaying');
+    assertEqual(fake.called('playVideo').length, 1, 'and does not fire another play');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('the button responds on press without waiting for the player', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { state: PAUSED });
+    const button = el(dom, 'video-playpause');
+
+    // A player that has not yet reported its new state, as happens while the
+    // change is in flight over postMessage.
+    fake.playVideo = function() { this.record('playVideo'); };
+
+    button.click();
+
+    assert(button.classList.contains('vp-playing'),
+        'the icon flips immediately rather than after a round trip');
+    assertEqual(button.title, 'Pause');
+
+    // A tick during the grace period keeps showing the intent.
+    Video.updateTransport();
+    assert(button.classList.contains('vp-playing'), 'the intent holds while the change is in flight');
+
+    // Once the grace period lapses, reality wins again.
+    Video._playIntent.expires = Date.now() - 1;
+    Video.updateTransport();
+    assert(!button.classList.contains('vp-playing'), 'a play that never started is corrected');
+
+    Video.teardown();
+    dom.window.close();
+});
+
+test('an ended video shows the play icon again', async () => {
+    const dom = await loadApp();
+    const Video = dom.window.Video;
+    const fake = embedWithFake(dom.window, { state: PLAYING });
+
+    Video.updateTransport();
+    assert(el(dom, 'video-playpause').classList.contains('vp-playing'));
+
+    fake.state = 0; // ENDED
+    Video.updateTransport();
+
+    assertEqual(Video.isPlaying(), false);
+    assert(!el(dom, 'video-playpause').classList.contains('vp-playing'));
+
+    Video.teardown();
+    dom.window.close();
+});

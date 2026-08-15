@@ -765,6 +765,10 @@ canvas {
     width: 18px;
     height: 18px;
     fill: #333;
+    /* The button, never the icon, is the event target. Play/pause and mute
+       swap their icon, and a swap between mousedown and mouseup would
+       otherwise destroy the pressed element and swallow the click. */
+    pointer-events: none;
 }
 
 .vp-rate {
