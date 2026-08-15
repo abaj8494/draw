@@ -94,6 +94,43 @@ canvas {
     font-size: 14px;
 }
 
+/* The estate mark as a 2x2 confusion matrix, sitting to the left of the
+   toolbar title. Same navigation device as fatfort.com, where the cells are the
+   brands; here it is one link home, because from inside an app the only cell
+   you want is the way out. Small enough not to compete with the tools below. */
+.ff-matrix {
+    display: grid;
+    grid-template-columns: repeat(2, 11px);
+    grid-auto-rows: 11px;
+    gap: 2px;
+    padding: 3px;
+    margin-right: 9px;
+    flex: none;
+    text-decoration: none;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.07);
+    transition: background 200ms;
+}
+.ff-matrix:hover { background: rgba(232, 131, 58, 0.22); }
+.ff-matrix:focus-visible { outline: 2px solid #e8833a; outline-offset: 2px; }
+.ff-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    background: #4a5058;
+    color: #9aa6b2;
+    font: 600 5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ff-cell.lit { background: #e8833a; color: #1c1206; }
+.ff-cell.off { opacity: 0.45; }
+
+/* The header was justify-content:space-between with two children; the matrix
+   makes three, so the title needs to claim the middle rather than be pushed
+   into the centre. */
+.toolbar-header { justify-content: flex-start; }
+.toolbar-header-buttons { margin-left: auto; }
+
 .toolbar-header-buttons {
     display: flex;
     gap: 4px;
