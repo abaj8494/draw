@@ -34,6 +34,7 @@ async function loadApp() {
         .join('\n')
         + '\nwindow.Tools = Tools; window.Canvas = Canvas;'
         + ' window.UI = UI; window.App = App; window.Storage = Storage;'
+        + ' window.Export = Export;'
         + ' window.__appReady = true;';
 
     const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8')
@@ -47,6 +48,7 @@ async function loadApp() {
     });
 
     dom.window.HTMLCanvasElement.prototype.getContext = function() { return stubCtx(); };
+    dom.window.HTMLCanvasElement.prototype.toDataURL = function() { return 'data:image/png;base64,'; };
     // Stub fetch so storage.list/server probes don't blow up in node.
     dom.window.fetch = () => Promise.resolve({
         ok: true,
