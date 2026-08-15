@@ -1051,7 +1051,7 @@ const Tools = {
             if (!b) continue;
 
             let padding = 0;
-            if (stroke.type !== 'image' && stroke.type !== 'text' && stroke.size) {
+            if (!Canvas.isBoxStroke(stroke) && stroke.type !== 'text' && stroke.size) {
                 padding = stroke.size / 2;
             }
             minX = Math.min(minX, b.minX - padding);

@@ -175,6 +175,14 @@ const Canvas = {
     },
 
     /**
+     * True for strokes positioned by an x/y/width/height box rather than by a
+     * point list. Images and embedded videos share identical geometry.
+     */
+    isBoxStroke(stroke) {
+        return !!stroke && (stroke.type === 'image' || stroke.type === 'video');
+    },
+
+    /**
      * Get or create a cached Image element for a data URL
      */
     getImage(src) {
@@ -369,8 +377,8 @@ const Canvas = {
         for (let i = this.strokes.length - 1; i >= 0; i--) {
             const stroke = this.strokes[i];
 
-            // Image stroke - bounding box hit test
-            if (stroke.type === 'image') {
+            // Box stroke (image/video) - bounding box hit test
+            if (this.isBoxStroke(stroke)) {
                 if (canvasPoint.x >= stroke.x - scaledThreshold &&
                     canvasPoint.x <= stroke.x + stroke.width + scaledThreshold &&
                     canvasPoint.y >= stroke.y - scaledThreshold &&
@@ -464,8 +472,8 @@ const Canvas = {
         const indices = [];
         for (let i = 0; i < this.strokes.length; i++) {
             const stroke = this.strokes[i];
-            if (stroke.type === 'image') {
-                // Check four corners of the image
+            if (this.isBoxStroke(stroke)) {
+                // Check four corners of the box
                 const corners = [
                     { x: stroke.x, y: stroke.y },
                     { x: stroke.x + stroke.width, y: stroke.y },
@@ -503,8 +511,8 @@ const Canvas = {
         const indices = [];
         for (let i = 0; i < this.strokes.length; i++) {
             const stroke = this.strokes[i];
-            if (stroke.type === 'image') {
-                // Check if image overlaps with selection rect
+            if (this.isBoxStroke(stroke)) {
+                // Check if the box overlaps with selection rect
                 if (stroke.x + stroke.width >= rect.x &&
                     stroke.x <= rect.x + rect.width &&
                     stroke.y + stroke.height >= rect.y &&
@@ -578,7 +586,7 @@ const Canvas = {
             const stroke = this.strokes[index];
             if (!stroke) continue;
 
-            if (stroke.type === 'image' || stroke.type === 'text') {
+            if (this.isBoxStroke(stroke) || stroke.type === 'text') {
                 stroke.x += dx;
                 stroke.y += dy;
             } else {
@@ -778,7 +786,7 @@ const Canvas = {
      * Get bounding box of a single stroke (in canvas coords)
      */
     getStrokeBounds(stroke) {
-        if (stroke.type === 'image') {
+        if (this.isBoxStroke(stroke)) {
             return { minX: stroke.x, minY: stroke.y, maxX: stroke.x + stroke.width, maxY: stroke.y + stroke.height };
         }
         if (stroke.type === 'text') {
@@ -849,7 +857,7 @@ const Canvas = {
             const stroke = this.strokes[index];
             if (!stroke) continue;
 
-            if (stroke.type === 'image') {
+            if (this.isBoxStroke(stroke)) {
                 const newX = anchorX + (stroke.x - anchorX) * scaleX;
                 const newY = anchorY + (stroke.y - anchorY) * scaleY;
                 stroke.x = newX;
