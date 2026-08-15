@@ -395,6 +395,11 @@ const Tools = {
      * Handle pointer start
      */
     handleStart(e) {
+        // Only the primary button draws. Right-click is reserved for panning
+        // and middle-click for the browser, and both share this listener.
+        // Touch events carry no button, so an undefined one is primary.
+        if (e.button !== undefined && e.button !== 0) return;
+
         const coords = this.getCoords(e);
         this.isDrawing = true;
         this.lastX = coords.x;
@@ -490,6 +495,9 @@ const Tools = {
      * Handle pointer move
      */
     handleMove(e) {
+        // A right-click drag pans; it must not also feed the active tool.
+        if (this.isRightClickPanning) return;
+
         const coords = this.getCoords(e);
 
         if (!this.isDrawing) {
