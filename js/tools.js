@@ -41,6 +41,9 @@ const Tools = {
     // Text tool state
     textInputActive: false,
     textCanvasPoint: null,
+    editingTextIndex: -1, // index of the stroke being re-edited, or -1
+    textFontSize: null,
+    textColor: null,
 
     // Resize state
     resizingHandle: null, // which handle is being dragged
@@ -478,7 +481,9 @@ const Tools = {
                 // Prevent the browser's default mousedown focus behavior from
                 // stealing focus away from the textarea after we open it.
                 if (e && e.preventDefault) e.preventDefault();
-                this.showTextInput(coords.x, coords.y);
+                // Clicking existing text reopens it for editing rather than
+                // starting a second label on top of it.
+                this.showTextInput(coords.x, coords.y, Canvas.findTextStrokeAt(coords.x, coords.y));
                 this.isDrawing = false;
                 break;
 
@@ -1296,23 +1301,50 @@ const Tools = {
     /**
      * Show text input overlay at click position
      */
-    showTextInput(screenX, screenY) {
+    showTextInput(screenX, screenY, editIndex = -1) {
         if (this.textInputActive) {
             this.commitTextInput();
         }
 
         const overlay = document.getElementById('text-input-overlay');
-        const canvasPoint = Canvas.toCanvas(screenX, screenY);
-        this.textCanvasPoint = canvasPoint;
+        const existing = editIndex >= 0 ? Canvas.strokes[editIndex] : null;
 
-        const fontSize = Math.max(12, this.brushSize * 4);
-        overlay.style.left = screenX + 'px';
-        overlay.style.top = screenY + 'px';
+        let fontSize, color, left, top;
+
+        if (existing) {
+            // Reopen the label where it sits, with its own size and colour.
+            this.editingTextIndex = editIndex;
+            this.textCanvasPoint = { x: existing.x, y: existing.y };
+            fontSize = existing.fontSize;
+            color = existing.color;
+            const screen = Canvas.toScreen(existing.x, existing.y);
+            left = screen.x;
+            top = screen.y;
+            overlay.value = existing.text;
+            // Hide the original while it is being edited, so the text is not
+            // drawn twice behind the overlay.
+            Canvas.hiddenStrokeIndex = editIndex;
+            Canvas.redraw();
+        } else {
+            this.editingTextIndex = -1;
+            this.textCanvasPoint = Canvas.toCanvas(screenX, screenY);
+            fontSize = Math.max(12, this.brushSize * 4);
+            color = this.brushColor;
+            left = screenX;
+            top = screenY;
+            overlay.value = '';
+        }
+
+        this.textFontSize = fontSize;
+        this.textColor = color;
+
+        overlay.style.left = left + 'px';
+        overlay.style.top = top + 'px';
         overlay.style.fontSize = (fontSize * Canvas.scale) + 'px';
-        overlay.style.color = this.brushColor;
-        overlay.value = '';
+        overlay.style.color = color;
         overlay.classList.remove('hidden');
         overlay.focus();
+        if (existing) overlay.select();
 
         this.textInputActive = true;
 
@@ -1345,16 +1377,31 @@ const Tools = {
     commitTextInput() {
         const overlay = document.getElementById('text-input-overlay');
         const text = overlay.value.trim();
+        const editIndex = this.editingTextIndex;
 
-        if (text && this.textCanvasPoint) {
-            const fontSize = Math.max(12, this.brushSize * 4);
+        // The edited stroke has to be visible again before anything is drawn.
+        Canvas.hiddenStrokeIndex = -1;
+
+        if (editIndex >= 0 && Canvas.strokes[editIndex]) {
+            const before = Canvas.strokes[editIndex];
+            if (!text) {
+                // Clearing a label deletes it.
+                Canvas.removeStroke(editIndex);
+                App.triggerAutoSave();
+            } else if (text !== before.text) {
+                Canvas.replaceStroke(editIndex, { ...before, text: text });
+                App.triggerAutoSave();
+            } else {
+                Canvas.redraw();
+            }
+        } else if (text && this.textCanvasPoint) {
             const stroke = {
                 type: 'text',
                 text: text,
                 x: this.textCanvasPoint.x,
                 y: this.textCanvasPoint.y,
-                fontSize: fontSize,
-                color: this.brushColor,
+                fontSize: this.textFontSize || Math.max(12, this.brushSize * 4),
+                color: this.textColor || this.brushColor,
                 opacity: 1
             };
 
@@ -1363,6 +1410,8 @@ const Tools = {
             Canvas.redoStack = [];
             Canvas.redraw();
             App.triggerAutoSave();
+        } else {
+            Canvas.redraw();
         }
 
         overlay.classList.add('hidden');
@@ -1371,6 +1420,7 @@ const Tools = {
         overlay.onblur = null;
         this.textInputActive = false;
         this.textCanvasPoint = null;
+        this.editingTextIndex = -1;
     },
 
     /**
@@ -1384,6 +1434,13 @@ const Tools = {
         overlay.onblur = null;
         this.textInputActive = false;
         this.textCanvasPoint = null;
+        this.editingTextIndex = -1;
+
+        // An abandoned edit leaves the original untouched.
+        if (Canvas.hiddenStrokeIndex !== -1) {
+            Canvas.hiddenStrokeIndex = -1;
+            Canvas.redraw();
+        }
     },
 
     /**

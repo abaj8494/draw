@@ -27,6 +27,10 @@ const Canvas = {
     // Image cache for rendering pasted images
     imageCache: new Map(),
 
+    // Index of a stroke temporarily suppressed from rendering while it is
+    // being edited in an overlay. -1 when nothing is hidden.
+    hiddenStrokeIndex: -1,
+
     // Background configuration
     backgrounds: {
         'grid-light': { type: 'grid', bg: '#ffffff', line: '#e0e0e0' },
@@ -149,8 +153,11 @@ const Canvas = {
      */
     redraw() {
         this.clear();
-        for (const stroke of this.strokes) {
-            this.renderStroke(stroke);
+        for (let i = 0; i < this.strokes.length; i++) {
+            // A stroke being edited in an overlay is suppressed so its text is
+            // not drawn twice. Transient, never part of the saved state.
+            if (i === this.hiddenStrokeIndex) continue;
+            this.renderStroke(this.strokes[i]);
         }
         // An embedded video is a DOM layer rather than pixels, so it is
         // reconciled here: every pan, zoom, undo and clear funnels through
@@ -438,6 +445,46 @@ const Canvas = {
     },
 
     /**
+     * Find the topmost text stroke at a position, for re-editing.
+     * Returns -1 when there is none.
+     */
+    findTextStrokeAt(x, y, threshold = 4) {
+        const canvasPoint = this.toCanvas(x, y);
+        const pad = threshold / this.scale;
+
+        for (let i = this.strokes.length - 1; i >= 0; i--) {
+            const stroke = this.strokes[i];
+            if (!stroke || stroke.type !== 'text') continue;
+
+            const bounds = this.getStrokeBounds(stroke);
+            if (!bounds) continue;
+
+            if (canvasPoint.x >= bounds.minX - pad && canvasPoint.x <= bounds.maxX + pad &&
+                canvasPoint.y >= bounds.minY - pad && canvasPoint.y <= bounds.maxY + pad) {
+                return i;
+            }
+        }
+        return -1;
+    },
+
+    /**
+     * Swap a stroke for a modified copy, undoably
+     */
+    replaceStroke(index, stroke) {
+        if (index < 0 || index >= this.strokes.length) return false;
+
+        this.undoStack.push({
+            action: 'replace',
+            indices: [index],
+            before: [JSON.parse(JSON.stringify(this.strokes[index]))]
+        });
+        this.redoStack = [];
+        this.strokes[index] = stroke;
+        this.redraw();
+        return true;
+    },
+
+    /**
      * Calculate distance from a point to a line segment
      */
     pointToSegmentDistance(point, segStart, segEnd) {
@@ -674,6 +721,12 @@ const Canvas = {
                 this.strokes[action.indices[si]] = JSON.parse(JSON.stringify(action.originalStrokes[si]));
             }
             this.redoStack.push({ ...action, resizedStrokes: currentStrokes });
+        } else if (action.action === 'replace') {
+            const current = action.indices.map(i => JSON.parse(JSON.stringify(this.strokes[i])));
+            for (let si = 0; si < action.indices.length; si++) {
+                this.strokes[action.indices[si]] = JSON.parse(JSON.stringify(action.before[si]));
+            }
+            this.redoStack.push({ ...action, after: current });
         } else if (action.action === 'clear') {
             this.strokes = action.strokes;
             this.redoStack.push(action);
@@ -712,6 +765,12 @@ const Canvas = {
                 this.strokes[action.indices[si]] = JSON.parse(JSON.stringify(action.resizedStrokes[si]));
             }
             this.undoStack.push({ ...action, originalStrokes: currentStrokes });
+        } else if (action.action === 'replace') {
+            const current = action.indices.map(i => JSON.parse(JSON.stringify(this.strokes[i])));
+            for (let si = 0; si < action.indices.length; si++) {
+                this.strokes[action.indices[si]] = JSON.parse(JSON.stringify(action.after[si]));
+            }
+            this.undoStack.push({ ...action, before: current });
         } else if (action.action === 'clear') {
             this.strokes = [];
             this.undoStack.push(action);
