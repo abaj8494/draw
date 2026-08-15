@@ -10,6 +10,8 @@
     <div id="app">
         <!-- Background Canvas -->
         <canvas id="background-canvas"></canvas>
+        <!-- Embedded video, anchored in canvas world coordinates -->
+        <div id="video-layer" class="hidden"><div id="video-player-target"></div></div>
         <!-- Drawing Canvas -->
         <canvas id="drawing-canvas"></canvas>
 
@@ -163,6 +165,16 @@
             </div>
 
             <div class="toolbar-section">
+                <label class="toolbar-label">Video</label>
+                <input type="text" id="video-url" placeholder="YouTube URL or ID...">
+                <div class="video-buttons">
+                    <button id="video-embed-btn" class="video-btn">Embed</button>
+                    <button id="video-remove-btn" class="video-btn">Remove</button>
+                </div>
+                <div id="video-error" class="video-error hidden"></div>
+            </div>
+
+            <div class="toolbar-section">
                 <label class="toolbar-label">Actions</label>
                 <div class="action-buttons">
                     <button id="undo-btn" class="action-btn" title="Undo (Ctrl+Z)">
@@ -220,6 +232,31 @@
 
         <!-- Laser pointer overlay -->
         <div id="laser-pointer" class="hidden"></div>
+
+        <!-- Pinned video miniplayer. The drawing canvas swallows clicks on the
+             embedded player, so transport lives here instead. -->
+        <div id="video-miniplayer" class="hidden">
+            <div class="vp-head">
+                <span id="video-label">Video</span>
+                <button id="video-close" title="Remove video">&times;</button>
+            </div>
+            <input type="range" id="video-scrubber" min="0" max="1000" step="1" value="0" title="Seek">
+            <div class="vp-row">
+                <button id="video-back10" class="vp-btn" title="Back 10 seconds">
+                    <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
+                    <span class="vp-skip">10</span>
+                </button>
+                <button id="video-playpause" class="vp-btn vp-play" title="Play">
+                    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+                <button id="video-fwd10" class="vp-btn" title="Forward 10 seconds">
+                    <svg viewBox="0 0 24 24"><path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>
+                    <span class="vp-skip">10</span>
+                </button>
+                <span class="vp-time"><span id="video-current">0:00</span> / <span id="video-duration">0:00</span></span>
+                <button id="video-rate" class="vp-btn vp-rate" title="Playback speed">1&times;</button>
+            </div>
+        </div>
     </div>
 
     <!-- jsPDF for PDF export -->

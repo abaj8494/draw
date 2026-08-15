@@ -23,6 +23,9 @@ const App = {
             // Initialize UI
             UI.init();
 
+            // Initialize video embedding
+            Video.init();
+
             // Load saved state
             await this.loadSavedState();
 

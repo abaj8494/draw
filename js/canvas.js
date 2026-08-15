@@ -152,6 +152,12 @@ const Canvas = {
         for (const stroke of this.strokes) {
             this.renderStroke(stroke);
         }
+        // An embedded video is a DOM layer rather than pixels, so it is
+        // reconciled here: every pan, zoom, undo and clear funnels through
+        // redraw(), which keeps the iframe glued to its stroke.
+        if (typeof Video !== 'undefined') {
+            Video.syncFromCanvas();
+        }
     },
 
     /**
@@ -201,6 +207,9 @@ const Canvas = {
      * Render a single stroke
      */
     renderStroke(stroke, ctx = this.drawCtx) {
+        // A video is rendered by the DOM layer, not onto the canvas.
+        if (stroke && stroke.type === 'video') return;
+
         if (stroke && stroke.type === 'image') {
             this.renderImageStroke(stroke, ctx);
             return;
@@ -772,6 +781,36 @@ const Canvas = {
             y: centerCanvas.y - imgHeight / 2,
             width: imgWidth,
             height: imgHeight,
+            opacity: 1
+        };
+
+        this.strokes.push(stroke);
+        this.undoStack.push({ action: 'add', stroke: stroke });
+        this.redoStack = [];
+        this.redraw();
+        return stroke;
+    },
+
+    /**
+     * Add a video stroke centred on the current viewport.
+     *
+     * Sized relative to the viewport rather than to a fixed world size, so an
+     * embed lands usably large whatever the current zoom.
+     */
+    addVideoStroke(videoId, start = 0) {
+        const worldWidth = (this.width * 0.6) / this.scale;
+        const worldHeight = worldWidth * 9 / 16;
+
+        const centre = this.toCanvas(this.width / 2, this.height / 2);
+
+        const stroke = {
+            type: 'video',
+            videoId: videoId,
+            x: centre.x - worldWidth / 2,
+            y: centre.y - worldHeight / 2,
+            width: worldWidth,
+            height: worldHeight,
+            start: start,
             opacity: 1
         };
 

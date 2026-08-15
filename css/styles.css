@@ -29,8 +29,30 @@ canvas {
     z-index: 1;
 }
 
-#drawing-canvas {
+/* Embedded video sits between the canvases: above the grid, below the ink.
+   pointer-events are off so drawing tools keep receiving every event; the
+   pinned miniplayer is the control surface instead. */
+#video-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
     z-index: 2;
+    transform-origin: 0 0;
+    pointer-events: none;
+    background: #000;
+    overflow: hidden;
+}
+
+#video-layer iframe,
+#video-layer #video-player-target {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}
+
+#drawing-canvas {
+    z-index: 3;
 }
 
 /* Toolbar */
@@ -373,7 +395,8 @@ canvas {
 }
 
 .export-btn,
-.save-btn {
+.save-btn,
+.video-btn {
     flex: 1;
     padding: 8px;
     border: 1px solid #ddd;
@@ -386,7 +409,8 @@ canvas {
 }
 
 .export-btn:hover,
-.save-btn:hover {
+.save-btn:hover,
+.video-btn:hover {
     background: #333;
     color: white;
     border-color: #333;
@@ -607,6 +631,160 @@ canvas {
     display: none;
 }
 
+/* Video toolbar controls */
+#video-url {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-bottom: 6px;
+    box-sizing: border-box;
+}
+
+.video-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.video-error {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #cc0000;
+}
+
+.video-error.hidden {
+    display: none;
+}
+
+/* Pinned video miniplayer */
+#video-miniplayer {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 90;
+    width: 240px;
+    padding: 8px 10px 10px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    user-select: none;
+    font-size: 12px;
+}
+
+#video-miniplayer.hidden {
+    display: none;
+}
+
+#video-miniplayer .vp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+#video-label {
+    font-weight: 600;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#video-close {
+    border: none;
+    background: none;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    color: #666;
+    padding: 0 2px;
+}
+
+#video-close:hover {
+    color: #000;
+}
+
+#video-scrubber {
+    width: 100%;
+    margin: 0 0 6px;
+    cursor: pointer;
+}
+
+#video-miniplayer .vp-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.vp-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 28px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.15s ease;
+}
+
+.vp-btn:hover:not(:disabled) {
+    background: #333;
+    border-color: #333;
+}
+
+.vp-btn:hover:not(:disabled) svg {
+    fill: white;
+}
+
+.vp-btn:hover:not(:disabled) .vp-skip {
+    color: white;
+}
+
+.vp-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.vp-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: #333;
+}
+
+/* The "10" sits inside the circular arrow of the skip icons */
+.vp-skip {
+    position: absolute;
+    font-size: 8px;
+    font-weight: 700;
+    color: #333;
+    top: 52%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.vp-rate {
+    width: auto;
+    min-width: 32px;
+    padding: 0 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #333;
+}
+
+#video-miniplayer .vp-time {
+    flex: 1;
+    text-align: center;
+    color: #666;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 /* Selection overlay */
 .selection-overlay {
     position: absolute;
@@ -650,6 +828,17 @@ canvas {
 
     #toolbar-close {
         display: block;
+    }
+
+    #video-miniplayer {
+        width: 190px;
+        top: 8px;
+        right: 8px;
+        padding: 6px 8px 8px;
+    }
+
+    #video-miniplayer .vp-time {
+        font-size: 11px;
     }
 
     .toolbar {
