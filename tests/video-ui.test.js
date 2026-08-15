@@ -177,3 +177,92 @@ test('typing in the URL field does not trigger canvas shortcuts', async () => {
 
     dom.window.close();
 });
+
+// ------------------------------------------------------------- paste to embed
+
+function pasteEvent(dom, { text, items, target } = {}) {
+    const calls = { prevented: 0 };
+    return {
+        target: target || dom.window.Canvas.drawCanvas,
+        preventDefault() { calls.prevented++; },
+        prevented: () => calls.prevented,
+        clipboardData: {
+            items: items,
+            getData: (type) => (type === 'text' ? (text || '') : ''),
+        },
+    };
+}
+
+test('pasting a YouTube link onto the canvas embeds it', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    withFakePlayer(window);
+
+    const evt = pasteEvent(dom, { text: URL, items: [] });
+    window.Tools.handlePaste(evt);
+
+    assertEqual(window.Canvas.strokes.length, 1);
+    assertEqual(window.Canvas.strokes[0].videoId, ID);
+    assertEqual(evt.prevented(), 1, 'the browser paste is suppressed');
+
+    window.Video.teardown();
+    dom.window.close();
+});
+
+test('pasting a bare video id embeds it', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    withFakePlayer(window);
+
+    window.Tools.handlePaste(pasteEvent(dom, { text: ID, items: [] }));
+
+    assertEqual(window.Canvas.strokes.length, 1);
+    assertEqual(window.Canvas.strokes[0].videoId, ID);
+
+    window.Video.teardown();
+    dom.window.close();
+});
+
+test('pasting ordinary text embeds nothing', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    withFakePlayer(window);
+
+    const evt = pasteEvent(dom, { text: 'just some notes', items: [] });
+    window.Tools.handlePaste(evt);
+
+    assertEqual(window.Canvas.strokes.length, 0);
+    assertEqual(evt.prevented(), 0, 'a normal paste is left alone');
+
+    dom.window.close();
+});
+
+test('pasting a YouTube link into a text field is left alone', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    withFakePlayer(window);
+
+    const evt = pasteEvent(dom, {
+        text: URL,
+        items: [],
+        target: el(dom, 'video-url'),
+    });
+    window.Tools.handlePaste(evt);
+
+    assertEqual(window.Canvas.strokes.length, 0, 'the URL should land in the input, not the canvas');
+    assertEqual(evt.prevented(), 0);
+
+    dom.window.close();
+});
+
+test('a paste with no clipboard data does not throw', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+
+    window.Tools.handlePaste({ target: window.Canvas.drawCanvas, preventDefault() {} });
+    window.Tools.handlePaste({ target: window.Canvas.drawCanvas, preventDefault() {}, clipboardData: {} });
+
+    assertEqual(window.Canvas.strokes.length, 0);
+
+    dom.window.close();
+});

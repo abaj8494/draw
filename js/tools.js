@@ -335,8 +335,17 @@ const Tools = {
      * Handle paste event - insert image from clipboard onto canvas
      */
     handlePaste(e) {
-        const items = e.clipboardData && e.clipboardData.items;
-        if (!items) return;
+        // Never hijack a paste into a text field.
+        if (this.isTypingTarget(e)) return;
+
+        const data = e.clipboardData;
+        if (!data) return;
+
+        const items = data.items;
+        if (!items) {
+            this.pasteYouTubeLink(e);
+            return;
+        }
 
         for (const item of items) {
             if (item.type.startsWith('image/')) {
@@ -359,6 +368,27 @@ const Tools = {
                 return; // Only handle the first image
             }
         }
+
+        // No image in the clipboard - a YouTube link is the next best thing.
+        this.pasteYouTubeLink(e);
+    },
+
+    /**
+     * Embed a YouTube link pasted onto the canvas
+     */
+    pasteYouTubeLink(e) {
+        if (typeof Video === 'undefined') return false;
+
+        const text = e.clipboardData && typeof e.clipboardData.getData === 'function'
+            ? e.clipboardData.getData('text')
+            : '';
+        if (!text || !Video.parseVideoId(text)) return false;
+
+        e.preventDefault();
+        Video.embed(text);
+        UI.updateUndoRedoButtons();
+        App.triggerAutoSave();
+        return true;
     },
 
     /**
