@@ -1219,8 +1219,9 @@ const Tools = {
     showLaser(x, y) {
         const laser = document.getElementById('laser-pointer');
         laser.classList.remove('hidden');
-        laser.style.left = x + 'px';
-        laser.style.top = y + 'px';
+        // Move with a transform rather than left/top: it is composited rather
+        // than laid out, so the dot keeps up with a fast pointer.
+        laser.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
 
         // Auto-hide after inactivity (only for plain laser)
         if (this.currentTool === 'laser-plain') {
@@ -1248,22 +1249,24 @@ const Tools = {
      * Start laser trail animation
      */
     startLaserTrailAnimation() {
-        const trailCanvas = document.getElementById('laser-trail-canvas');
-        if (!trailCanvas) {
+        if (!document.getElementById('laser-trail-canvas')) {
             const canvas = document.createElement('canvas');
             canvas.id = 'laser-trail-canvas';
             canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:49';
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
             document.getElementById('app').appendChild(canvas);
+            this.sizeLaserTrailCanvas(canvas);
         }
 
         const animate = () => {
             const canvas = document.getElementById('laser-trail-canvas');
             if (!canvas) return;
 
+            // Follow a window resize, and keep the backing store at the
+            // device pixel ratio so the trail is not upscaled and blurry.
+            this.sizeLaserTrailCanvas(canvas);
+
             const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
             const now = Date.now();
             const fadeTime = 600; // shorter fade so the trail doesn't stretch across the canvas
@@ -1271,22 +1274,7 @@ const Tools = {
             // Remove old points
             this.laserTrail = this.laserTrail.filter(p => now - p.time < fadeTime);
 
-            if (this.laserTrail.length > 1) {
-                for (let i = 1; i < this.laserTrail.length; i++) {
-                    const p1 = this.laserTrail[i - 1];
-                    const p2 = this.laserTrail[i];
-                    const age = now - p2.time;
-                    const alpha = 1 - (age / fadeTime);
-
-                    ctx.beginPath();
-                    ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
-                    ctx.lineWidth = 3;
-                    ctx.lineCap = 'round';
-                    ctx.moveTo(p1.x, p1.y);
-                    ctx.lineTo(p2.x, p2.y);
-                    ctx.stroke();
-                }
-            }
+            this.drawLaserTrail(ctx, this.laserTrail, now, fadeTime);
 
             if (this.laserTrail.length > 0 || this.currentTool === 'laser-trail') {
                 requestAnimationFrame(animate);
@@ -1296,6 +1284,69 @@ const Tools = {
         };
 
         requestAnimationFrame(animate);
+    },
+
+    /**
+     * Match the trail canvas to the viewport at full device resolution
+     */
+    sizeLaserTrailCanvas(canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.round(window.innerWidth * dpr);
+        const height = Math.round(window.innerHeight * dpr);
+
+        if (canvas.width === width && canvas.height === height) return;
+
+        canvas.width = width;
+        canvas.height = height;
+        // Resizing resets the context, so the scale has to go back on.
+        canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    },
+
+    /**
+     * Draw the trail as a smooth tapering curve.
+     *
+     * Pointer samples are sparse and irregular, so joining them with straight
+     * segments of constant width reads as an angular zigzag. Each sample is
+     * used as the control point of a quadratic between its neighbouring
+     * midpoints, and both width and alpha fall off with age.
+     */
+    drawLaserTrail(ctx, points, now, fadeTime) {
+        if (points.length < 2) return;
+
+        const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+        const stroke = (life) => {
+            ctx.strokeStyle = `rgba(255, 0, 0, ${life})`;
+            ctx.lineWidth = 1.5 + 4 * life;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        };
+
+        for (let i = 1; i < points.length - 1; i++) {
+            const point = points[i];
+            const life = 1 - (now - point.time) / fadeTime;
+            if (life <= 0) continue;
+
+            const from = mid(points[i - 1], point);
+            const to = mid(point, points[i + 1]);
+
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.quadraticCurveTo(point.x, point.y, to.x, to.y);
+            stroke(life);
+        }
+
+        // The head of the trail, from the last midpoint to the newest sample.
+        const last = points[points.length - 1];
+        const previous = points[points.length - 2];
+        const life = 1 - (now - last.time) / fadeTime;
+        if (life > 0) {
+            const from = mid(previous, last);
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(last.x, last.y);
+            stroke(life);
+        }
     },
 
     /**

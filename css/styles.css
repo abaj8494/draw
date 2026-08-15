@@ -596,13 +596,18 @@ canvas {
 /* Laser Pointer */
 #laser-pointer {
     position: fixed;
+    top: 0;
+    left: 0;
     width: 12px;
     height: 12px;
     background: radial-gradient(circle, #ff0000 0%, rgba(255, 0, 0, 0.5) 50%, transparent 70%);
     border-radius: 50%;
     pointer-events: none;
     z-index: 50;
-    transform: translate(-50%, -50%);
+    /* Positioned by a transform from the origin, so movement is composited
+       instead of triggering layout on every pointer sample. */
+    transform: translate3d(0, 0, 0) translate(-50%, -50%);
+    will-change: transform;
     box-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000;
 }
 
