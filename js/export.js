@@ -220,7 +220,7 @@ const Export = {
             const pathData = this.pointsToSVGPath(stroke.points, stroke.type === 'pen');
             const opacity = stroke.opacity < 1 ? ` opacity="${stroke.opacity}"` : '';
 
-            svgContent += `  <path class="stroke" d="${pathData}" stroke="${stroke.color}" stroke-width="${stroke.size}"${opacity}/>\n`;
+            svgContent += `  <path class="stroke" d="${pathData}" stroke="${stroke.color}" stroke-width="${stroke.size * Canvas.scale}"${opacity}/>\n`;
         }
 
         svgContent += '</svg>';
@@ -234,34 +234,31 @@ const Export = {
     pointsToSVGPath(points, smooth = false) {
         if (points.length === 0) return '';
 
-        const offsetX = Canvas.offsetX;
-        const offsetY = Canvas.offsetY;
+        // Go through the same world -> screen transform as every other export
+        // path, so strokes stay registered with images and text at any zoom.
+        const screen = points.map(p => Canvas.toScreen(p.x, p.y));
 
-        if (points.length === 1) {
-            const p = points[0];
-            return `M ${p.x + offsetX} ${p.y + offsetY} L ${p.x + offsetX} ${p.y + offsetY}`;
+        if (screen.length === 1) {
+            return `M ${screen[0].x} ${screen[0].y} L ${screen[0].x} ${screen[0].y}`;
         }
 
-        let d = `M ${points[0].x + offsetX} ${points[0].y + offsetY}`;
+        let d = `M ${screen[0].x} ${screen[0].y}`;
 
-        if (smooth && points.length > 2) {
+        if (smooth && screen.length > 2) {
             // Smooth bezier curves
-            for (let i = 1; i < points.length - 1; i++) {
-                const p = points[i];
-                const next = points[i + 1];
-                const xc = (p.x + next.x) / 2 + offsetX;
-                const yc = (p.y + next.y) / 2 + offsetY;
-                d += ` Q ${p.x + offsetX} ${p.y + offsetY} ${xc} ${yc}`;
+            for (let i = 1; i < screen.length - 1; i++) {
+                const xc = (screen[i].x + screen[i + 1].x) / 2;
+                const yc = (screen[i].y + screen[i + 1].y) / 2;
+                d += ` Q ${screen[i].x} ${screen[i].y} ${xc} ${yc}`;
             }
 
-            const last = points[points.length - 1];
-            const secondLast = points[points.length - 2];
-            d += ` Q ${secondLast.x + offsetX} ${secondLast.y + offsetY} ${last.x + offsetX} ${last.y + offsetY}`;
+            const last = screen[screen.length - 1];
+            const secondLast = screen[screen.length - 2];
+            d += ` Q ${secondLast.x} ${secondLast.y} ${last.x} ${last.y}`;
         } else {
             // Simple line segments
-            for (let i = 1; i < points.length; i++) {
-                const p = points[i];
-                d += ` L ${p.x + offsetX} ${p.y + offsetY}`;
+            for (let i = 1; i < screen.length; i++) {
+                d += ` L ${screen[i].x} ${screen[i].y}`;
             }
         }
 

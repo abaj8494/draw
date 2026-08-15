@@ -216,6 +216,53 @@ test('buildSVG includes a grid pattern only for grid backgrounds', async () => {
     dom.window.close();
 });
 
+test('buildSVG registers strokes with images at a non-identity zoom', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    const Canvas = window.Canvas;
+    const Export = window.Export;
+
+    Canvas.currentBackground = 'blank-light';
+    Canvas.scale = 2;
+    Canvas.offsetX = 30;
+    Canvas.offsetY = -10;
+
+    // A pen stroke and an image that both start at the same world point must
+    // land at the same place in the exported document.
+    Canvas.strokes = [
+        { type: 'image', src: 'data:image/png;base64,AAA', x: 100, y: 50, width: 10, height: 10, opacity: 1 },
+        pencil([{ x: 100, y: 50 }, { x: 120, y: 70 }]),
+    ];
+
+    const svg = Export.buildSVG();
+    const expected = Canvas.toScreen(100, 50);
+
+    assertEqual(expected.x, 230);
+    assertEqual(expected.y, 90);
+    assert(svg.includes(`<image x="230" y="90"`), 'image anchored at the screen position');
+    assert(svg.includes(`d="M 230 90`), 'path must start at the same screen position');
+
+    dom.window.close();
+});
+
+test('buildSVG scales stroke width with the zoom level', async () => {
+    const dom = await loadApp();
+    const { window } = dom;
+    const Canvas = window.Canvas;
+    const Export = window.Export;
+
+    Canvas.currentBackground = 'blank-light';
+    Canvas.strokes = [pencil([{ x: 0, y: 0 }, { x: 10, y: 10 }])]; // size 4
+
+    Canvas.scale = 1;
+    assert(Export.buildSVG().includes('stroke-width="4"'));
+
+    Canvas.scale = 3;
+    assert(Export.buildSVG().includes('stroke-width="12"'), 'width must track the zoom');
+
+    dom.window.close();
+});
+
 test('toSVG downloads the document built by buildSVG', async () => {
     const dom = await loadApp();
     const { window, window: { document } } = dom;
